@@ -101,6 +101,24 @@ python_version = "3.10"
 strict = true
 files = ["src/gpscheduler"]
 
+# Our runtime deps (gpconfig, gpclog, apscheduler) do not ship a py.typed
+# marker, so mypy treats them as untyped. Keep strict checking for our own
+# code while tolerating these untyped third-party imports.
+[[tool.mypy.overrides]]
+module = ["gpconfig.*", "gpclog.*", "apscheduler.*", "tzlocal.*", "loguru.*"]
+ignore_missing_imports = true
+
+# gpconfig is untyped, so GPConfig/GPConfigurable resolve to Any; mypy --strict
+# then refuses to subclass them (misc error). These modules intentionally build
+# on those bases, so silence that one error code for them.
+[[tool.mypy.overrides]]
+module = "gpscheduler.config"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "gpscheduler.scheduler"
+disable_error_code = ["misc"]
+
 # --- pytest ------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
