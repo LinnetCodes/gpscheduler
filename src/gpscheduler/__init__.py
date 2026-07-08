@@ -5,6 +5,7 @@ The public API surface is re-exported here as modules are implemented.
 
 from __future__ import annotations
 
+from gpscheduler.config import GPJobConfig, GPSchedulerConfig
 from gpscheduler.decorator import scheduled
 from gpscheduler.exceptions import (
     ConfigError,
@@ -21,6 +22,9 @@ from gpscheduler.exceptions import (
 __all__ = [
     "__version__",
     "scheduled",
+    # Config classes (ADR-0005, ADR-0013)
+    "GPSchedulerConfig",
+    "GPJobConfig",
     # Exceptions (ADR-0011)
     "GPSchedulerError",
     "DecoratorError",
