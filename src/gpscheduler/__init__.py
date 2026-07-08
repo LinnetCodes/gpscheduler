@@ -1,11 +1,34 @@
 """GPScheduler — a cron-style scheduler that turns package functions into scheduled jobs.
 
-Public API grows here as the library is implemented. For now the package exposes
-its version so build backends and tooling can read it.
+The public API surface is re-exported here as modules are implemented.
 """
 
 from __future__ import annotations
 
-__all__ = ["__version__"]
+from gpscheduler.exceptions import (
+    ConfigError,
+    CronExpressionError,
+    DecoratorError,
+    GPSchedulerError,
+    JobSignatureError,
+    NotScheduledError,
+    RegistryError,
+    ReservedKeyError,
+    SignatureContractError,
+)
+
+__all__ = [
+    "__version__",
+    # Exceptions (ADR-0011)
+    "GPSchedulerError",
+    "DecoratorError",
+    "SignatureContractError",
+    "RegistryError",
+    "NotScheduledError",
+    "ConfigError",
+    "CronExpressionError",
+    "JobSignatureError",
+    "ReservedKeyError",
+]
 
 __version__ = "0.1.0"
