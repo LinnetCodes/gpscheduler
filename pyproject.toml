@@ -29,6 +29,7 @@ classifiers = [
 dependencies = [
     "click>=8.0.0",
     "gpconfig>=0.3.0",
+    "gpclog>=0.3.0",
 ]
 
 [project.optional-dependencies]
