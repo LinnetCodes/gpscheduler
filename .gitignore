@@ -216,3 +216,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Developer notes / scratch docs — local only, never committed.
+# Public user docs live in docs/; dev_docs/ is for private working notes
+# that the maintainer stores elsewhere.
+dev_docs/
+
+# AI coding-agent instruction files — local only, not shared via version control.
+# These are per-developer/per-tool working files (including AGENTS.md, which is
+# kept local and maintained separately rather than committed as project policy).
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.windsurfrules
+.cursorrules
+.cursor/
+.cursorignore
+.github/copilot-instructions.md
+.continue/
+continue.json

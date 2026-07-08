@@ -1,0 +1,71 @@
+# ------------------------------------------------------------------------------
+# MkDocs configuration for GPScheduler.
+#
+# Docs source lives in `docs/` (i18n folder convention: `docs/en/` = English,
+# `docs/zh/` = Chinese). The built site is deployed to GitHub Pages.
+# Run locally with:  mkdocs serve
+# ------------------------------------------------------------------------------
+
+site_name: GPScheduler
+site_description: A cron-style Python scheduler that turns package functions into scheduled jobs via config files.
+site_url: https://linnetcodes.github.io/gpscheduler/
+repo_url: https://github.com/LinnetCodes/gpscheduler
+repo_name: LinnetCodes/gpscheduler
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+# ------------------------------------------------------------------ theme -----
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# -------------------------------------------------------------- i18n plugin ---
+# Folder convention: `docs/en/<page>.md` (English) and `docs/zh/<page>.md` (Chinese).
+# A language selector appears in the nav; /zh/ URLs serve the Chinese build.
+plugins:
+  - search
+  - i18n:
+      docs_structure: folder
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: zh
+          name: 简体中文
+          build: true
+
+# --------------------------------------------------------------- navigation ---
+nav:
+  - Home: index.md
+  # - API reference: api.md   # enable once mkdocstrings hooks are wired up
+
+# ------------------------------------------------------- markdown extensions --
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true

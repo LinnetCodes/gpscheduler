@@ -1,0 +1,106 @@
+[project]
+name = "gpscheduler"
+dynamic = ["version"]
+description = "A cron-style scheduler that turns functions from any package into scheduled jobs via config files."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Linnet Codes", email = "linnet.codes@gmail.com"},
+]
+keywords = ["scheduler", "cron", "task-scheduler", "scheduling", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+# Runtime dependencies: add here as the library grows. A library should keep
+# bounds loose (no over-pinning) so downstream projects can resolve versions.
+dependencies = [
+    "click>=8.0.0",
+    "gpconfig>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "build>=1.2",
+    "twine>=5",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocs-static-i18n>=1.2",
+    "mkdocstrings[python]>=0.25",
+]
+
+# Canonical project links — surfaced on PyPI and used by tooling.
+[project.urls]
+Homepage = "https://github.com/LinnetCodes/gpscheduler"
+Documentation = "https://linnetcodes.github.io/gpscheduler/"
+Repository = "https://github.com/LinnetCodes/gpscheduler"
+Issues = "https://github.com/LinnetCodes/gpscheduler/issues"
+Changelog = "https://github.com/LinnetCodes/gpscheduler/releases"
+PyPI = "https://pypi.org/project/gpscheduler/"
+
+# --- Build configuration -----------------------------------------------------
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Versioning is derived from a single source of truth in the package __init__.
+[tool.hatch.version]
+path = "src/gpscheduler/__init__.py"
+
+# Wheel ships only the importable package (+ py.typed).
+[tool.hatch.build.targets.wheel]
+packages = ["src/gpscheduler"]
+
+# sdist includes everything needed to inspect/develop/test from source.
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/gpscheduler",
+    "tests",
+    "docs",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "mkdocs.yml",
+]
+
+# --- Ruff: linter + formatter ------------------------------------------------
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gpscheduler"]
+
+# --- mypy: static type checking ----------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src/gpscheduler"]
+
+# --- pytest ------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
