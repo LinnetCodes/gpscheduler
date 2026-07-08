@@ -27,6 +27,7 @@ classifiers = [
 # Runtime dependencies: add here as the library grows. A library should keep
 # bounds loose (no over-pinning) so downstream projects can resolve versions.
 dependencies = [
+    "apscheduler>=3.10,<4",
     "click>=8.0.0",
     "gpconfig>=0.3.0",
     "gpclog>=0.3.0",
