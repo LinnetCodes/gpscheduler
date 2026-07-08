@@ -135,6 +135,30 @@ def test_create_scheduler_builds_instance(tmp_path: Path) -> None:
         s.shutdown(timeout=5)
 
 
+def test_create_scheduler_with_no_jobs_folder_is_empty_schedule(tmp_path: Path) -> None:
+    """ADR-0005: an absent jobs/ folder is legal and yields an empty schedule.
+
+    Exercises the loader's ``except ConfigNotFoundError`` branch (no test in
+    test_loader.py does, since those use a FakeManager). Here create_scheduler
+    drives a real GPConfigManager, so this covers the real empty-folder path.
+    """
+    cfg_folder = tmp_path / "cfg"
+    cfg_folder.mkdir(parents=True)
+    (cfg_folder / "global_env.yaml").write_text("project: test\n", encoding="utf-8")
+    (cfg_folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\n"
+        "configured_class_name: GPScheduler\n"
+        "timezone: UTC\n"
+        "max_workers: 1\n",
+        encoding="utf-8",
+    )
+    # Note: NO jobs/ folder created.
+
+    s = create_scheduler(cfg_folder=cfg_folder, project_name="gpscheduler_test")
+    assert isinstance(s, GPScheduler)
+    assert s.get_jobs() == []
+
+
 def test_run_scheduler_blocks_until_shutdown(monkeypatch, tmp_path: Path) -> None:
     cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=5)
     s = GPScheduler(cfg)

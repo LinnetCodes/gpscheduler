@@ -13,7 +13,7 @@ import importlib
 import inspect
 import pickle
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from apscheduler.triggers.cron import CronTrigger
@@ -48,7 +48,6 @@ class LoadedJob:
     kwargs: dict[str, Any]
     executor: str
     enable: bool = True
-    extra: dict[str, Any] = field(default_factory=dict)
 
 
 def _default_import_packages(packages: list[str]) -> None:

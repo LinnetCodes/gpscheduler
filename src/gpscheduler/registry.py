@@ -9,10 +9,6 @@ Per ADR-0004, no locking is needed in v1: registration happens at import
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Final
-
-#: The conventional reserved name for the process-global registry instance.
-GLOBAL_REGISTRY_NAME: Final[str] = "global"
 
 
 class Registry:

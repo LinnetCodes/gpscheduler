@@ -5,6 +5,8 @@ category (e.g. ``except RegistryError``) or the base ``except
 GPSchedulerError`` to catch anything gpscheduler raises.
 """
 
+from __future__ import annotations
+
 
 class GPSchedulerError(Exception):
     """Base class for all gpscheduler exceptions."""

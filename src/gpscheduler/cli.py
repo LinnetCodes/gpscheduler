@@ -18,13 +18,7 @@ def main() -> None:
 @main.command("run")
 @click.option("--config", "config", default=None, help="Path to the gpconfig cfg_folder.")
 @click.option("--project", "project", default="gpscheduler", help="gpconfig project name.")
-@click.option(
-    "--log-level",
-    "log_level",
-    default=None,
-    help="Reserved for future use (gpclog controls level via its own config).",
-)
-def run_cmd(config: str | None, project: str, log_level: str | None) -> None:
+def run_cmd(config: str | None, project: str) -> None:
     """Start the scheduler and block until a shutdown signal."""
     try:
         scheduler = create_scheduler(cfg_folder=config, project_name=project)
