@@ -70,7 +70,6 @@ class GPScheduler(GPConfigurable):
         self._logger = gpclog.get_logger(LOGGER_NAME)
         bridge_apscheduler_logging()
         self._scheduler: BackgroundScheduler = self._build_scheduler()
-        self._loaded: list[Any] = []
         self._stop_event: threading.Event = threading.Event()
         self._started = False
 
@@ -86,7 +85,6 @@ class GPScheduler(GPConfigurable):
 
     def register_jobs(self, loaded: list[Any]) -> None:
         """Register pre-loaded jobs (used by create_scheduler)."""
-        self._loaded = list(loaded)
         for job in loaded:
             self._scheduler.add_job(
                 func=job.func,

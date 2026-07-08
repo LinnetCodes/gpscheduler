@@ -57,6 +57,43 @@ def test_shutdown_timeout_argument_overrides_config() -> None:
     assert not s.running
 
 
+def test_shutdown_force_exits_on_timeout() -> None:
+    """If shutdown(wait=True) outlasts the timeout, force-exit via wait=False."""
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=5)
+    s = GPScheduler(cfg)
+    s.start()
+
+    # Patch _scheduler.shutdown so wait=True blocks (simulating a busy job),
+    # while wait=False actually shuts the scheduler down. The timeout path must
+    # call shutdown(wait=False) and then return within the timeout window.
+    original_shutdown = s._scheduler.shutdown
+    state = {"forced": False}
+
+    def _fake_shutdown(wait: bool = True) -> None:
+        if wait:
+            # Simulate a job still running: never return until forced.
+            # The timeout path will call us again with wait=False.
+            time.sleep(20)
+        else:
+            state["forced"] = True
+            original_shutdown(wait=False)
+
+    s._scheduler.shutdown = _fake_shutdown  # type: ignore[method-assign]
+
+    try:
+        start = time.monotonic()
+        s.shutdown(timeout=1)  # 1s timeout; wait=True would block ~20s
+        elapsed = time.monotonic() - start
+        assert elapsed < 5, f"shutdown took too long: {elapsed}s"
+        assert state["forced"], "expected force-exit (shutdown(wait=False)) to be called"
+        assert not s.running
+    finally:
+        # Restore in case of failure so the background thread can clean up.
+        s._scheduler.shutdown = original_shutdown  # type: ignore[method-assign]
+        # Ensure the daemon shutdown thread (stuck in time.sleep(20)) is gone.
+
+
+
 def test_process_init_is_callable() -> None:
     # Should not raise; it's meant to run in worker processes.
     assert callable(_process_init)
