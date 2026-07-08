@@ -1,0 +1,125 @@
+"""Tests for the GPScheduler engine and convenience functions (ADR-0009/0012/0013)."""
+
+from __future__ import annotations
+
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+import gpscheduler  # noqa: F401  (registers config classes)
+from gpscheduler import GPScheduler, GPSchedulerConfig, create_scheduler, run_scheduler
+from gpscheduler.decorator import scheduled
+from gpscheduler.exceptions import ConfigError
+from gpscheduler.scheduler import _process_init, bridge_apscheduler_logging
+
+
+@scheduled
+def _quick_task() -> int:
+    return 42
+
+
+def test_exported_from_package() -> None:
+    for name in ("GPScheduler", "GPSchedulerConfig", "create_scheduler", "run_scheduler"):
+        assert hasattr(gpscheduler, name)
+
+
+def test_gpscheduler_is_gpconfigurable() -> None:
+    from gpconfig import GPConfigurable
+
+    assert issubclass(GPScheduler, GPConfigurable)
+
+
+def test_construct_from_config() -> None:
+    cfg = GPSchedulerConfig()
+    s = GPScheduler(cfg)
+    assert s.config is cfg
+
+
+def test_start_and_shutdown_roundtrip() -> None:
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=5)
+    s = GPScheduler(cfg)
+    s.start()
+    try:
+        assert s.running
+    finally:
+        s.shutdown()
+    assert not s.running
+
+
+def test_shutdown_timeout_argument_overrides_config() -> None:
+    cfg = GPSchedulerConfig(timeout=5)
+    s = GPScheduler(cfg)
+    s.start()
+    # shutdown(timeout=5) should exit quickly because there are no running jobs.
+    s.shutdown(timeout=5)
+    assert not s.running
+
+
+def test_process_init_is_callable() -> None:
+    # Should not raise; it's meant to run in worker processes.
+    assert callable(_process_init)
+
+
+def test_bridge_logging_is_idempotent() -> None:
+    # Calling twice must not error.
+    bridge_apscheduler_logging()
+    bridge_apscheduler_logging()
+
+
+def test_create_scheduler_builds_instance(tmp_path: Path) -> None:
+    # Build a minimal cfg_folder.
+    cfg_folder = tmp_path / "cfg"
+    (cfg_folder / "jobs").mkdir(parents=True)
+    (cfg_folder / "global_env.yaml").write_text("project: test\n", encoding="utf-8")
+    (cfg_folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\n"
+        "configured_class_name: GPScheduler\n"
+        "timezone: UTC\n"
+        "max_workers: 1\n",
+        encoding="utf-8",
+    )
+    quick_dotted = f"{_quick_task.__module__}.{_quick_task.__qualname__}"
+    (cfg_folder / "jobs" / "quick.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {quick_dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+
+    # create_scheduler must import packages (none here) and load jobs.
+    s = create_scheduler(cfg_folder=cfg_folder, project_name="gpscheduler_test")
+    assert isinstance(s, GPScheduler)
+    s.start()
+    try:
+        # One job registered.
+        jobs = s.get_jobs()
+        assert len(jobs) == 1
+    finally:
+        s.shutdown(timeout=5)
+
+
+def test_run_scheduler_blocks_until_shutdown(monkeypatch, tmp_path: Path) -> None:
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=5)
+    s = GPScheduler(cfg)
+    s.start()
+
+    # Simulate a signal arriving almost immediately by pre-setting the event
+    # the run loop waits on.
+    def _fake_install(ev: threading.Event):
+        ev.set()
+        return lambda: ev.set()
+
+    monkeypatch.setattr("gpscheduler.scheduler.install_shutdown_handler", _fake_install)
+
+    # Should return promptly because the event is already set.
+    start = time.monotonic()
+    run_scheduler(s)
+    elapsed = time.monotonic() - start
+    assert elapsed < 10
+    assert not s.running
+
+
+def test_gpconfig_errors_translated_to_config_error(tmp_path: Path) -> None:
+    # Point at a non-existent folder -> gpconfig raises ConfigFolderError (a GPConfigError).
+    with pytest.raises(ConfigError):
+        create_scheduler(cfg_folder=tmp_path / "does-not-exist", project_name="gpscheduler_test")
