@@ -1,0 +1,202 @@
+"""Config loader / validator (ADR-0004/0005/0006/0013).
+
+Walks the ``jobs/`` config folder via a GPConfigManager, resolves each
+``GPJobConfig`` against the Registry, validates cron + signature + reserved
+keys, and produces LoadedJob records the scheduler registers with APScheduler.
+Designed for dependency injection: callers pass the manager, registry, an
+import-packages callable, and the cron parser, so tests stay hermetic.
+"""
+
+from __future__ import annotations
+
+import importlib
+import inspect
+import pickle
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from apscheduler.triggers.cron import CronTrigger
+
+from gpscheduler.config import GPSchedulerConfig
+from gpscheduler.cron import parse_cron
+from gpscheduler.exceptions import (
+    JobSignatureError,
+    NotScheduledError,
+    ReservedKeyError,
+)
+from gpscheduler.registry import Registry
+
+if TYPE_CHECKING:
+    from gpconfig import GPConfigManager
+
+#: Reserved kwarg name; job kwargs must not set it (ADR-0006).
+GP_GLOBALS_KEY = "gp_globals"
+
+ImportPackagesFn = Callable[[list[str]], None]
+CronParserFn = Callable[[str, str | None], CronTrigger]
+
+
+@dataclass
+class LoadedJob:
+    """A fully-validated, ready-to-register job."""
+
+    name: str
+    func: Callable[..., Any]
+    trigger: CronTrigger
+    args: list[Any]
+    kwargs: dict[str, Any]
+    executor: str
+    enable: bool = True
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+def _default_import_packages(packages: list[str]) -> None:
+    """Import each top-level package name so @scheduled side-effects fire."""
+    for pkg in packages:
+        importlib.import_module(pkg)
+
+
+def _resolve_executor(job_executor: str | None, sched_executor: str) -> str:
+    """ADR-0013 priority: job.executor -> sched.executor -> 'thread'."""
+    return job_executor or sched_executor or "thread"
+
+
+def _preflight_pickle(
+    func: Callable[..., Any],
+    args: list[Any],
+    kwargs: dict[str, Any],
+) -> None:
+    """Ensure process-executor arguments are picklable (ADR-0013, Fail-Early)."""
+    try:
+        pickle.dumps((func, args, kwargs))
+    except (pickle.PicklingError, TypeError, AttributeError) as e:
+        raise JobSignatureError(
+            f"process-executor job {getattr(func, '__qualname__', func)!r} has "
+            f"non-picklable args/kwargs: {e}"
+        ) from e
+
+
+def load_jobs(
+    *,
+    manager: GPConfigManager,
+    registry: Registry,
+    sched_config: GPSchedulerConfig,
+    import_packages: ImportPackagesFn = _default_import_packages,
+    cron_parser: CronParserFn = parse_cron,
+) -> list[LoadedJob]:
+    """Import packages, then load + validate every job under ``jobs/``.
+
+    Validation runs for ALL jobs (enabled and disabled). Disabled jobs are
+    validated but excluded from the returned list (ADR-0005).
+
+    Raises:
+        NotScheduledError, CronExpressionError, JobSignatureError,
+        ReservedKeyError: on the first failing job (Fail-Early).
+    """
+    import_packages(sched_config.packages)
+
+    from gpconfig.exceptions import ConfigNotFoundError
+
+    # No jobs/ folder is legal -> empty schedule (ADR-0005); ConfigNotFoundError
+    # means the folder simply isn't there. Any other gpconfig error propagates.
+    try:
+        job_names = manager.list_configs("jobs")
+    except ConfigNotFoundError:
+        job_names = []
+
+    loaded: list[LoadedJob] = []
+    # get_config auto-detects GPJobConfig via cfg_class_name (returns a
+    # GPJobConfig instance for jobs/<name>.yaml).
+    for name in job_names:
+        job_cfg = manager.get_config(f"jobs.{name}")
+        loaded_job = _validate_one(
+            name=name,
+            job_cfg=job_cfg,
+            registry=registry,
+            sched_config=sched_config,
+            cron_parser=cron_parser,
+        )
+        if loaded_job.enable:
+            loaded.append(loaded_job)
+    return loaded
+
+
+def _validate_one(
+    *,
+    name: str,
+    job_cfg: Any,
+    registry: Registry,
+    sched_config: GPSchedulerConfig,
+    cron_parser: CronParserFn,
+) -> LoadedJob:
+    # (a) Registry lookup (ADR-0004 strict).
+    func = _lookup(registry, job_cfg.func, name)
+
+    # (b) Cron parse (ADR-0007).
+    trigger = cron_parser(job_cfg.cron, _tz(sched_config))
+
+    # (c) Reserved-key check (ADR-0006).
+    if GP_GLOBALS_KEY in job_cfg.kwargs:
+        raise ReservedKeyError(
+            f"job {name!r}: kwargs must not contain reserved key "
+            f"{GP_GLOBALS_KEY!r} (ADR-0006)"
+        )
+
+    # (d) Conditional gp_globals injection (ADR-0006) — does the func declare it?
+    effective_kwargs = dict(job_cfg.kwargs)
+    if _signature_declares_gp_globals(func):
+        effective_kwargs[GP_GLOBALS_KEY] = sched_config.job_globals
+
+    # (e) signature.bind (ADR-0003).
+    _bind_check(func, job_cfg.args, effective_kwargs, name)
+
+    # (f) executor resolution + pickle preflight for process jobs (ADR-0013).
+    executor = _resolve_executor(job_cfg.executor, sched_config.executor)
+    if executor == "process":
+        _preflight_pickle(func, job_cfg.args, effective_kwargs)
+
+    return LoadedJob(
+        name=name,
+        func=func,
+        trigger=trigger,
+        args=list(job_cfg.args),
+        kwargs=effective_kwargs,
+        executor=executor,
+        enable=job_cfg.enable,
+    )
+
+
+def _tz(sched_config: GPSchedulerConfig) -> str | None:
+    return sched_config.timezone or None
+
+
+def _lookup(registry: Registry, dotted: str, job_name: str) -> Callable[..., Any]:
+    try:
+        return registry.get(dotted)
+    except KeyError:
+        raise NotScheduledError(
+            f"job {job_name!r}: func {dotted!r} is not registered. "
+            "Is the function decorated with @scheduled and its package imported?"
+        ) from None
+
+
+def _signature_declares_gp_globals(func: Callable[..., Any]) -> bool:
+    sig = inspect.signature(func)
+    params = sig.parameters
+    return GP_GLOBALS_KEY in params
+
+
+def _bind_check(
+    func: Callable[..., Any],
+    args: list[Any],
+    kwargs: dict[str, Any],
+    job_name: str,
+) -> None:
+    try:
+        inspect.signature(func).bind(*args, **kwargs)
+    except TypeError as e:
+        raise JobSignatureError(
+            f"job {job_name!r}: arguments do not bind to "
+            f"{func.__qualname__!r}: {e}"
+        ) from e
