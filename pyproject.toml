@@ -58,6 +58,9 @@ Issues = "https://github.com/LinnetCodes/gpscheduler/issues"
 Changelog = "https://github.com/LinnetCodes/gpscheduler/releases"
 PyPI = "https://pypi.org/project/gpscheduler/"
 
+[project.scripts]
+gpscheduler = "gpscheduler.cli:main"
+
 # --- Build configuration -----------------------------------------------------
 [build-system]
 requires = ["hatchling"]
