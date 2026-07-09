@@ -3,11 +3,39 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
+from typing import Any
 
 import click
 
 from gpscheduler.exceptions import GPSchedulerError
 from gpscheduler.scheduler import create_scheduler, run_scheduler
+
+
+def _next_run_time(job: Any) -> str:
+    """Render a job's next fire time, computing it when the scheduler is unstarted.
+
+    APScheduler only sets ``Job.next_run_time`` once the scheduler has started
+    (the jobstore computes and writes it via ``Job._modify``). ``create_scheduler``
+    deliberately does NOT start the scheduler — that is ``run_scheduler``'s job —
+    so ``list-jobs`` (a dry run) sees jobs whose ``next_run_time`` slot is unset
+    and accessing it raises ``AttributeError``.
+
+    For a meaningful dry-run listing, compute the next fire time from the
+    trigger directly via ``trigger.get_next_fire_time(None, now)``. When the
+    scheduler IS started, the job's own ``next_run_time`` wins.
+    """
+    # Started scheduler: the jobstore has populated next_run_time.
+    if hasattr(job, "next_run_time") and job.next_run_time is not None:
+        return str(job.next_run_time)
+    # Unstarted (dry run): ask the trigger when it would next fire.
+    trigger = getattr(job, "trigger", None)
+    if trigger is not None:
+        now = datetime.now(tz=getattr(job, "_scheduler", job).timezone or None)
+        nxt = trigger.get_next_fire_time(None, now)
+        if nxt is not None:
+            return str(nxt)
+    return "(unscheduled)"
 
 
 @click.group()
@@ -45,7 +73,7 @@ def list_jobs_cmd(config: str | None, project: str) -> None:
         return
     click.echo(f"{len(jobs)} enabled job(s):")
     for j in jobs:
-        click.echo(f"  - {j.id}: next run {j.next_run_time}")
+        click.echo(f"  - {j.id}: next run {_next_run_time(j)}")
 
 
 if __name__ == "__main__":

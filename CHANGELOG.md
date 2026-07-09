@@ -33,4 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `gpscheduler` CLI: `run` and `list-jobs` subcommands.
 - `apscheduler>=3.10,<4` added as a runtime dependency.
 
+### Fixed
+- `gpscheduler list-jobs` no longer crashes with `AttributeError: 'apscheduler.job.Job'
+  object has no attribute 'next_run_time'` when jobs exist. APScheduler leaves
+  `Job.next_run_time` unset until the scheduler starts, and `create_scheduler`
+  deliberately does not start it (that is `run_scheduler`'s job), so the dry-run
+  listing now computes the next fire time from the trigger directly.
+
 [Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/initial...HEAD
