@@ -128,9 +128,7 @@ def test_missing_func_raises_not_scheduled() -> None:
 
 def test_bad_cron_raises() -> None:
     reg = _make_registry(_func_no_globals)
-    mgr = FakeManager(
-        {"cleanup": GPJobConfig(func=dotted(_func_no_globals), cron="99 * * *")}
-    )
+    mgr = FakeManager({"cleanup": GPJobConfig(func=dotted(_func_no_globals), cron="99 * * *")})
     with pytest.raises(CronExpressionError):
         _load(mgr, reg, _sched_config())
 
@@ -194,9 +192,7 @@ def test_executor_priority_job_overrides_scheduler() -> None:
 
 def test_executor_falls_back_to_scheduler_default() -> None:
     reg = _make_registry(_func_no_globals)
-    mgr = FakeManager(
-        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])}
-    )
+    mgr = FakeManager({"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])})
     jobs = _load(mgr, reg, _sched_config(executor="process"))
     assert jobs[0].executor == "process"
 

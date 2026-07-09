@@ -138,8 +138,7 @@ def _validate_one(
     # (c) Reserved-key check (ADR-0006).
     if GP_GLOBALS_KEY in job_cfg.kwargs:
         raise ReservedKeyError(
-            f"job {name!r}: kwargs must not contain reserved key "
-            f"{GP_GLOBALS_KEY!r} (ADR-0006)"
+            f"job {name!r}: kwargs must not contain reserved key {GP_GLOBALS_KEY!r} (ADR-0006)"
         )
 
     # (d) Conditional gp_globals injection (ADR-0006) — does the func declare it?
@@ -196,6 +195,5 @@ def _bind_check(
         inspect.signature(func).bind(*args, **kwargs)
     except TypeError as e:
         raise JobSignatureError(
-            f"job {job_name!r}: arguments do not bind to "
-            f"{func.__qualname__!r}: {e}"
+            f"job {job_name!r}: arguments do not bind to {func.__qualname__!r}: {e}"
         ) from e

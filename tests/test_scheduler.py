@@ -93,7 +93,6 @@ def test_shutdown_force_exits_on_timeout() -> None:
         # Ensure the daemon shutdown thread (stuck in time.sleep(20)) is gone.
 
 
-
 def test_process_init_is_callable() -> None:
     # Should not raise; it's meant to run in worker processes.
     assert callable(_process_init)

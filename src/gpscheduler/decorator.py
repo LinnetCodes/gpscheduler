@@ -57,6 +57,4 @@ def _validate_signature_contract(func: Callable[..., Any]) -> None:
     # Belt-and-suspenders: the defining module must own this function.
     module = inspect.getmodule(func)
     if module is None:
-        raise SignatureContractError(
-            f"{func!r}: could not resolve a defining module (ADR-0003)."
-        )
+        raise SignatureContractError(f"{func!r}: could not resolve a defining module (ADR-0003).")
