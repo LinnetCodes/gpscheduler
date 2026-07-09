@@ -16,6 +16,7 @@ class Registry:
 
     def __init__(self) -> None:
         self._functions: dict[str, Callable[..., object]] = {}
+        self._init_functions: dict[str, Callable[..., object]] = {}
 
     def register(self, func: Callable[..., object]) -> str:
         """Register ``func`` and return its dotted-path key.
@@ -24,6 +25,15 @@ class Registry:
         """
         key = f"{func.__module__}.{func.__qualname__}"
         self._functions[key] = func
+        return key
+
+    def register_init(self, func: Callable[..., object]) -> str:
+        """Register ``func`` as a worker_init function and return its dotted-path key.
+
+        Re-registering the same function under the same key is idempotent.
+        """
+        key = f"{func.__module__}.{func.__qualname__}"
+        self._init_functions[key] = func
         return key
 
     def get(self, key: str) -> Callable[..., object]:
@@ -37,13 +47,32 @@ class Registry:
         except KeyError:
             raise KeyError(key) from None
 
+    def get_init(self, key: str) -> Callable[..., object]:
+        """Return the worker_init function for ``key``.
+
+        Raises:
+            KeyError: if ``key`` is not registered as a worker_init function.
+        """
+        try:
+            return self._init_functions[key]
+        except KeyError:
+            raise KeyError(key) from None
+
     def contains(self, key: str) -> bool:
         """Return True if ``key`` is registered."""
         return key in self._functions
 
+    def contains_init(self, key: str) -> bool:
+        """Return True if ``key`` is registered as a worker_init function."""
+        return key in self._init_functions
+
     def clear(self) -> None:
         """Remove all entries."""
         self._functions.clear()
+
+    def clear_init(self) -> None:
+        """Remove all worker_init entries."""
+        self._init_functions.clear()
 
     def __len__(self) -> int:
         return len(self._functions)
