@@ -74,3 +74,13 @@ def test_cfg_class_names_registered() -> None:
     # GPSchedulerConfig/GPJobConfig register themselves at import time.
     assert "GPSchedulerConfig" in GPConfigManager._config_classes
     assert "GPJobConfig" in GPConfigManager._config_classes
+
+
+def test_job_config_worker_init_defaults_none() -> None:
+    cfg = GPJobConfig(func="pkg.f", cron="* * * * *")
+    assert cfg.worker_init is None
+
+
+def test_job_config_worker_init_accepts_dotpath() -> None:
+    cfg = GPJobConfig(func="pkg.f", cron="* * * * *", worker_init="pkg.init_db")
+    assert cfg.worker_init == "pkg.init_db"

@@ -38,6 +38,7 @@ class GPJobConfig(GPConfig):
     kwargs: dict[str, Any] = {}
     executor: Literal["thread", "process"] | None = None
     enable: bool = True
+    worker_init: str | None = None  # optional dot-path to a @worker_init function
 
 
 # Self-register so GPConfigManager.get_config auto-detects by cfg_class_name.
