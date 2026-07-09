@@ -58,6 +58,7 @@ plugins:
 # --------------------------------------------------------------- navigation ---
 nav:
   - Home: index.md
+  - Worker initialization: worker_init.md
   # - API reference: api.md   # enable once mkdocstrings hooks are wired up
 
 # ------------------------------------------------------- markdown extensions --
