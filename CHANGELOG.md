@@ -39,5 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Job.next_run_time` unset until the scheduler starts, and `create_scheduler`
   deliberately does not start it (that is `run_scheduler`'s job), so the dry-run
   listing now computes the next fire time from the trigger directly.
+- `gpscheduler run` (Ctrl+C) now shuts down gracefully on Windows. The main
+  thread blocked indefinitely on `Event.wait()`, which CPython cannot reliably
+  interrupt with SIGINT on Windows, so Ctrl+C failed to exit the process. The
+  wait is now a short-timeout poll loop with a `KeyboardInterrupt` backstop;
+  the same path remains interruptible on POSIX.
 
 [Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/initial...HEAD

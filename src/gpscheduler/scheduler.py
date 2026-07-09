@@ -148,7 +148,21 @@ class GPScheduler(GPConfigurable):
         self.start()
         try:
             self._logger.info("gpscheduler running; waiting for shutdown signal")
-            self._stop_event.wait()
+            # Poll with a short timeout instead of an indefinite wait. On Windows,
+            # CPython only dispatches SIGINT between bytecode instructions on the
+            # main thread; an indefinite Event.wait() blocks in
+            # WaitForSingleObject and is not reliably woken, so Ctrl+C fails to
+            # interrupt `gpscheduler run`. A periodic timeout lets the main
+            # thread wake and observe the event set by the signal handler. On
+            # POSIX the event also wakes promptly (its wait is signal-interrupt
+            # regardless), so the poll is harmless there. KeyboardInterrupt is
+            # caught as a backstop: if the handler is bypassed and the default
+            # SIGINT path fires instead, the exception still breaks us out.
+            while not self._stop_event.wait(timeout=0.2):
+                pass
+        except KeyboardInterrupt:
+            self._logger.info("gpscheduler interrupted (Ctrl+C); shutting down")
+            self._stop_event.set()
         finally:
             self.shutdown()
         self._logger.info("gpscheduler stopped")

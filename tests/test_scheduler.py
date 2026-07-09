@@ -179,6 +179,36 @@ def test_run_scheduler_blocks_until_shutdown(monkeypatch, tmp_path: Path) -> Non
     assert not s.running
 
 
+def test_run_scheduler_keyboard_interrupt_exits_cleanly(monkeypatch) -> None:
+    """Regression: run() must shut down gracefully when the wait loop is interrupted.
+
+    On Windows the SIGINT handler is not reliably dispatched while the main
+    thread blocks in Event.wait(), so the default KeyboardInterrupt path is
+    the backstop. This simulates that path: the first wait() call raises
+    KeyboardInterrupt, and run() must catch it, set the event, and shut down
+    without re-raising. Covers the previously-untested interrupt branch.
+    """
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=5)
+    s = GPScheduler(cfg)
+    s.start()
+
+    def _wait_then_interrupt(timeout=None):  # type: ignore[no-untyped-def]
+        # First call (inside run()'s poll loop) raises as if Ctrl+C hit mid-wait.
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(s._stop_event, "wait", _wait_then_interrupt)
+
+    start = time.monotonic()
+    # Must NOT raise; the KeyboardInterrupt is caught inside run().
+    run_scheduler(s)
+    elapsed = time.monotonic() - start
+    assert elapsed < 10
+    assert not s.running
+    # run() sets the stop event on interrupt; shutdown() in the finally block
+    # does not depend on wait(), so it completes normally.
+    assert s._stop_event.is_set()
+
+
 def test_gpconfig_errors_translated_to_config_error(tmp_path: Path) -> None:
     # Point at a non-existent folder -> gpconfig raises ConfigFolderError (a GPConfigError).
     with pytest.raises(ConfigError):
