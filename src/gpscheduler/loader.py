@@ -152,12 +152,14 @@ def _validate_one(
     if _signature_declares_gp_globals(func):
         effective_kwargs[GP_GLOBALS_KEY] = sched_config.job_globals
 
-    # (g) worker_init resolution + gp_context contract (per-job worker_init design).
+    # (e) worker_init resolution + gp_context contract (per-job worker_init design).
     func_params = inspect.signature(func).parameters
     declares_gp_context = GP_CONTEXT_KEY in func_params
     init_func: Callable[..., Any] | None = None
     if job_cfg.worker_init is not None:
         init_func = _lookup_init(registry, job_cfg.worker_init, name)
+        # Resolved only to validate registration (raises NotWorkerInitError if
+        # unregistered); the wrapper re-resolves by dot-path at call time.
         if not declares_gp_context:
             raise JobSignatureError(
                 f"job {name!r}: worker_init is configured but the function "
@@ -169,12 +171,12 @@ def _validate_one(
             "but no worker_init is configured"
         )
 
-    # (e) signature.bind (ADR-0003). gp_context is injected at call time by the
+    # (f) signature.bind (ADR-0003). gp_context is injected at call time by the
     # wrapper, so exclude it from the bind check (user never supplies it).
     bind_params = {k: v for k, v in func_params.items() if k != GP_CONTEXT_KEY}
     _bind_check_with_params(func, bind_params, job_cfg.args, effective_kwargs, name)
 
-    # Wrap func with the context injector if worker_init is set (before preflight,
+    # (g) Wrap func with the context injector if worker_init is set (before preflight,
     # so preflight sees the picklable wrapper).
     effective_func: Callable[..., Any] = func
     if init_func is not None:
@@ -185,7 +187,7 @@ def _validate_one(
             gp_globals=sched_config.job_globals,
         )
 
-    # (f) executor resolution + pickle preflight for process jobs (ADR-0013).
+    # (h) executor resolution + pickle preflight for process jobs (ADR-0013).
     executor = _resolve_executor(job_cfg.executor, sched_config.executor)
     if executor == "process":
         _preflight_pickle(effective_func, job_cfg.args, effective_kwargs)
