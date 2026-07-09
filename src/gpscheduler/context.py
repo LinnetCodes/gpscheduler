@@ -154,9 +154,7 @@ class _ContextualFunc:
             raise ReservedKeyError(
                 f"{GP_CONTEXT_KEY!r} is reserved and must not be passed directly"
             )
-        ctx = _get_or_create_context(
-            self._job_name, self._worker_init_dotpath, self._gp_globals
-        )
+        ctx = _get_or_create_context(self._job_name, self._worker_init_dotpath, self._gp_globals)
         kwargs[GP_CONTEXT_KEY] = ctx
         func = registry.get(self._func_dotpath)
         return func(*args, **kwargs)

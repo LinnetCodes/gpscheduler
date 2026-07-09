@@ -91,4 +91,3 @@ def test_clear_init_empties_init_map_only() -> None:
     assert not reg.contains_init(init_key)
     # clear_init must NOT touch the scheduled map
     assert reg.contains(sched_key)
-
