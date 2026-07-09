@@ -58,3 +58,11 @@ def _validate_signature_contract(func: Callable[..., Any]) -> None:
     module = inspect.getmodule(func)
     if module is None:
         raise SignatureContractError(f"{func!r}: could not resolve a defining module (ADR-0003).")
+
+    # Double-decoration ban: a function already @worker_init cannot be @scheduled.
+    dotted = f"{func.__module__}.{func.__qualname__}"
+    if registry.contains_init(dotted):
+        raise SignatureContractError(
+            f"{func.__name__!r}: already registered as a @worker_init function; "
+            "a function cannot be both @scheduled and @worker_init."
+        )
