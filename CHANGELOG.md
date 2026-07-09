@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     SIGINT on Windows).
   - `gpscheduler` CLI: `run` and `list-jobs` subcommands.
 - `apscheduler>=3.10,<4` added as a runtime dependency.
+- Per-job `worker_init` initializer: decorate a function with `@worker_init`,
+  reference it from a job's `worker_init:` config field (dot-path), and its
+  returned object is injected into the job function as `gp_context` on every
+  execution. The init runs once per execution context (main process for thread
+  jobs, each worker process for process jobs) and is reused thereafter, so
+  expensive objects (DB handlers, network clients) are built once, not per run.
+  Config flows through `gp_globals`; heavy objects flow through `gp_context`.
+  New exceptions: `WorkerInitError`, `NotWorkerInitError`. See ADR-0015.
 
 ### Fixed
 - `gpscheduler list-jobs` no longer crashes with `AttributeError: 'apscheduler.job.Job'
