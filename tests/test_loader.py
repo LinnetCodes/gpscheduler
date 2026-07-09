@@ -270,6 +270,15 @@ def _job_without_context(a: int) -> int:
     return a
 
 
+def _bad_init(unexpected_required: str) -> object:  # noqa: ANN201
+    """Module-level init with an unsatisfiable signature (used by bind-check test).
+
+    Defined at module scope because @worker_init rejects nested functions; the
+    loader's bind check must reject this signature regardless of decoration.
+    """
+    return object()
+
+
 # Register the worker_init job func into the process-global registry so the
 # _ContextualFunc wrapper can resolve it by dotted path at call time (mirrors how
 # real @scheduled functions enter the registry; the per-test local `reg` passed
@@ -353,3 +362,14 @@ def test_load_process_job_with_worker_init_preflights_wrapper() -> None:
     import pickle
 
     pickle.dumps(jobs[0].func)  # must not raise
+
+
+def test_load_worker_init_bad_signature_raises_at_load() -> None:
+    """Regression: an init func with an unsatisfiable signature fails at load, not runtime."""
+    reg = _make_registry(_job_with_context)
+    reg.register_init(_bad_init)
+    init_dot = f"{_bad_init.__module__}.{_bad_init.__qualname__}"
+    func_dot = f"{_job_with_context.__module__}.{_job_with_context.__qualname__}"
+    mgr = FakeManager({"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot)})
+    with pytest.raises(JobSignatureError):
+        _load(mgr, reg, _sched_config())

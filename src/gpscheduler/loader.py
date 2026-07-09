@@ -165,6 +165,14 @@ def _validate_one(
                 f"job {name!r}: worker_init is configured but the function "
                 f"{func.__qualname__!r} does not declare a 'gp_context' parameter"
             )
+        # Bind-validate the init function's signature (Fail-Early): gpscheduler
+        # calls it as init_func() or init_func(gp_globals=...). Reject inits with
+        # other required params now rather than at first execution.
+        init_params = dict(inspect.signature(init_func).parameters)
+        init_kwargs: dict[str, Any] = {}
+        if GP_GLOBALS_KEY in init_params:
+            init_kwargs[GP_GLOBALS_KEY] = sched_config.job_globals
+        _bind_check_with_params(init_func, init_params, [], init_kwargs, name)
     elif declares_gp_context:
         raise JobSignatureError(
             f"job {name!r}: function {func.__qualname__!r} declares 'gp_context' "

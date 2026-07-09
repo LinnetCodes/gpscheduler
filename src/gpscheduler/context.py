@@ -91,6 +91,9 @@ def _validate_worker_init_contract(func: Callable[..., Any]) -> None:
 #: Reserved kwarg name; job kwargs must not set it (injected at call time).
 GP_CONTEXT_KEY = "gp_context"
 
+#: Sentinel distinguishing "not yet cached" from a cached None return value.
+_CACHE_MISS = object()
+
 #: Module-level cache: job_name -> init object. On the thread side this lives in
 #: the main process; after spawn each worker process has its own fresh module
 #: state, so the cache is naturally per-worker.
@@ -109,13 +112,13 @@ def _get_or_create_context(
     cached — the next call retries.
     """
     # Fast path: already cached.
-    cached = _context_cache.get(job_name)
-    if cached is not None:
+    cached = _context_cache.get(job_name, _CACHE_MISS)
+    if cached is not _CACHE_MISS:
         return cached
     with _context_lock:
         # Re-check inside the lock (another thread may have built it).
-        cached = _context_cache.get(job_name)
-        if cached is not None:
+        cached = _context_cache.get(job_name, _CACHE_MISS)
+        if cached is not _CACHE_MISS:
             return cached
         init_func = registry.get_init(worker_init_dotpath)
         # Inject gp_globals if the init function declares it.

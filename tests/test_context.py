@@ -100,6 +100,27 @@ def _job_uses_context(x: int, *, gp_context: list[int]) -> list[int]:
     return gp_context
 
 
+# Module-level holders for the gp_globals-injection and None-init regression
+# tests. Defined at module scope because @worker_init rejects nested functions;
+# the tests reset + read these instead of closing over locals.
+_gp_globals_received: dict[str, Any] = {}
+
+
+@worker_init
+def _capturing_init(gp_globals: dict[str, Any]) -> dict[str, Any]:
+    _gp_globals_received.update(gp_globals)
+    return gp_globals
+
+
+_none_init_call_count = [0]
+
+
+@worker_init
+def _none_init() -> None:
+    _none_init_call_count[0] += 1
+    return None
+
+
 # Register the job func so the wrapper can resolve it by dotted path at call
 # time (mirrors how real @scheduled functions enter the registry).
 registry.register(_job_uses_context)
@@ -162,4 +183,58 @@ def test_contextual_func_per_job_isolation() -> None:
         # Best-effort cleanup of the temp registration.
         _reg._functions.pop(  # type: ignore[attr-defined]
             f"{_other_job.__module__}.{_other_job.__qualname__}", None
+        )
+
+
+def test_contextual_func_injects_gp_globals_into_init() -> None:
+    """An init func declaring gp_globals receives the scheduler's job_globals."""
+    _reset_cache_for_test()
+    _gp_globals_received.clear()
+
+    def _job_needing_ctx(*, gp_context: dict[str, Any]) -> dict[str, Any]:
+        return gp_context
+
+    from gpscheduler.registry import registry as _reg
+
+    _reg.register(_job_needing_ctx)
+    try:
+        wf = _ContextualFunc(
+            func_dotpath=f"{_job_needing_ctx.__module__}.{_job_needing_ctx.__qualname__}",
+            worker_init_dotpath=f"{_capturing_init.__module__}.{_capturing_init.__qualname__}",
+            job_name="gp_globals_test",
+            gp_globals={"db_url": "sqlite:///x", "limit": 100},
+        )
+        result = wf()
+        assert _gp_globals_received == {"db_url": "sqlite:///x", "limit": 100}
+        assert result == {"db_url": "sqlite:///x", "limit": 100}
+    finally:
+        _reg._functions.pop(  # type: ignore[attr-defined]
+            f"{_job_needing_ctx.__module__}.{_job_needing_ctx.__qualname__}", None
+        )
+
+
+def test_contextual_func_none_returning_init_runs_once() -> None:
+    """Regression: a None-returning init must still only run once (cache sentinel)."""
+    _reset_cache_for_test()
+    _none_init_call_count[0] = 0
+
+    def _job_none_ctx(*, gp_context: Any) -> None:
+        return None
+
+    from gpscheduler.registry import registry as _reg
+
+    _reg.register(_job_none_ctx)
+    try:
+        wf = _ContextualFunc(
+            func_dotpath=f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}",
+            worker_init_dotpath=f"{_none_init.__module__}.{_none_init.__qualname__}",
+            job_name="none_init_test",
+        )
+        wf()
+        wf()
+        wf()
+        assert _none_init_call_count[0] == 1  # init ran exactly once despite returning None
+    finally:
+        _reg._functions.pop(  # type: ignore[attr-defined]
+            f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}", None
         )
