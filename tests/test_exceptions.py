@@ -30,6 +30,11 @@ def test_config_layer() -> None:
     assert issubclass(exc.ConfigError, exc.GPSchedulerError)
 
 
+def test_worker_init_layer() -> None:
+    assert issubclass(exc.NotWorkerInitError, exc.WorkerInitError)
+    assert issubclass(exc.WorkerInitError, exc.GPSchedulerError)
+
+
 def test_all_exported_from_package() -> None:
     for name in [
         "GPSchedulerError",

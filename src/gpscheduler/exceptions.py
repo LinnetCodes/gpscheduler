@@ -34,6 +34,17 @@ class NotScheduledError(RegistryError):
     """A dotted path in config was not found in the Registry (strict check)."""
 
 
+# ---- Worker init layer ----
+
+
+class WorkerInitError(GPSchedulerError):
+    """Base class for errors related to the @worker_init initializer."""
+
+
+class NotWorkerInitError(WorkerInitError):
+    """A worker_init dotted path in config is not a registered @worker_init function."""
+
+
 # ---- Config layer ----
 
 
