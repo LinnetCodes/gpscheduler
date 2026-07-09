@@ -1,4 +1,4 @@
-"""The GPScheduler engine and convenience functions (ADR-0009/0012/0013).
+"""The GPScheduler engine and convenience functions (ADR-0009/0012/0013/0014).
 
 GPScheduler composes (does not inherit) an APScheduler BackgroundScheduler,
 always registering both a ``thread`` and a ``process`` named executor so each
@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import signal
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -57,8 +58,17 @@ def bridge_apscheduler_logging() -> None:
 
 
 def _process_init() -> None:
-    """Per-worker gpclog (re)initialization for the process pool (ADR-0012)."""
+    """Per-worker gpclog (re)initialization + SIGINT disposition (ADR-0012/0014)."""
     gpclog.get_logger(LOGGER_NAME, sn=os.getpid())
+    # Workers must NOT respond to Ctrl+C. On Windows, Ctrl+C is broadcast to the
+    # whole process group; an uninterruptible worker would raise KeyboardInterrupt
+    # and dump an ugly traceback from its call_queue.get() block. On POSIX spawn,
+    # workers can inherit the main process's custom SIGINT handler (which would
+    # reference a stop_event the worker doesn't own). Ignoring SIGINT in every
+    # worker (both OSes) keeps the shutdown flow in the main process exclusively,
+    # consistent with ADR-0008's "main process owns signals" architecture. See
+    # ADR-0014 for the full rationale.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 class GPScheduler(GPConfigurable):

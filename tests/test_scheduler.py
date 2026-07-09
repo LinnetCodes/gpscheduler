@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import threading
 import time
 from pathlib import Path
@@ -96,6 +97,23 @@ def test_shutdown_force_exits_on_timeout() -> None:
 def test_process_init_is_callable() -> None:
     # Should not raise; it's meant to run in worker processes.
     assert callable(_process_init)
+
+
+def test_process_init_ignores_sigint() -> None:
+    """ADR-0014: _process_init makes the worker ignore SIGINT.
+
+    Runs _process_init in the test's main thread (a worker's initializer also
+    runs in the worker's main thread, so this is faithful). It must leave SIGINT
+    disposed as SIG_IGN so Ctrl+C never raises KeyboardInterrupt inside a worker
+    (which dumps an ugly traceback on Windows). The previous disposition is
+    restored so this does not leak into other tests.
+    """
+    previous = signal.getsignal(signal.SIGINT)
+    try:
+        _process_init()
+        assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 def test_bridge_logging_is_idempotent() -> None:

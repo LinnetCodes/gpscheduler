@@ -44,5 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interrupt with SIGINT on Windows, so Ctrl+C failed to exit the process. The
   wait is now a short-timeout poll loop with a `KeyboardInterrupt` backstop;
   the same path remains interruptible on POSIX.
+- Process-pool workers no longer dump a `KeyboardInterrupt` traceback to stderr
+  on Ctrl+C. On Windows, Ctrl+C is broadcast to the whole process group and an
+  uninterruptible worker raised from its `call_queue.get()` block. Workers now
+  ignore SIGINT (`SIG_IGN`) so only the main process responds to Ctrl+C (ADR-0014).
 
 [Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/initial...HEAD
