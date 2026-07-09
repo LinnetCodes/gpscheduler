@@ -9,14 +9,17 @@ import pytest
 
 import gpscheduler  # noqa: F401  (ensures config classes register)
 from gpscheduler.config import GPJobConfig, GPSchedulerConfig
+from gpscheduler.context import _reset_cache_for_test, worker_init
 from gpscheduler.exceptions import (
     CronExpressionError,
     JobSignatureError,
     NotScheduledError,
+    NotWorkerInitError,
     ReservedKeyError,
 )
 from gpscheduler.loader import LoadedJob, load_jobs
 from gpscheduler.registry import Registry
+from gpscheduler.registry import registry as _global_registry
 
 # --- helpers ---------------------------------------------------------------
 
@@ -249,3 +252,104 @@ def test_disabled_job_still_validated_for_signature() -> None:
     )
     with pytest.raises(JobSignatureError):
         _load(mgr, reg, _sched_config())
+
+
+# --- worker_init integration -------------------------------------------------
+
+
+@worker_init
+def _make_handle() -> dict[str, int]:
+    return {"n": 0}
+
+
+def _job_with_context(a: int, *, gp_context: dict[str, int]) -> int:
+    return a + gp_context["n"]
+
+
+def _job_without_context(a: int) -> int:
+    return a
+
+
+# Register the worker_init job func into the process-global registry so the
+# _ContextualFunc wrapper can resolve it by dotted path at call time (mirrors how
+# real @scheduled functions enter the registry; the per-test local `reg` passed
+# to the loader is not what the wrapper re-resolves against).
+_global_registry.register(_job_with_context)
+
+
+def test_load_resolves_worker_init_and_wraps_func() -> None:
+    """A job with worker_init set gets a wrapped func; the init resolves by dotpath."""
+    _reset_cache_for_test()
+    reg = _make_registry(_job_with_context)
+    reg.register_init(_make_handle)
+    init_dot = f"{_make_handle.__module__}.{_make_handle.__qualname__}"
+    func_dot = f"{_job_with_context.__module__}.{_job_with_context.__qualname__}"
+    mgr = FakeManager(
+        {"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot, args=[5])}
+    )
+    jobs = _load(mgr, reg, _sched_config())
+    assert len(jobs) == 1
+    # The registered func is the wrapper, not the bare function.
+    assert jobs[0].func is not _job_with_context
+    # Calling it injects gp_context (init ran: returns dict with n=0; a + 0 = 5).
+    assert jobs[0].func(5) == 5
+
+
+def test_load_worker_init_not_registered_raises_not_worker_init_error() -> None:
+    reg = _make_registry(_job_with_context)
+    func_dot = f"{_job_with_context.__module__}.{_job_with_context.__qualname__}"
+    mgr = FakeManager(
+        {"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init="pkg.does_not_exist")}
+    )
+    with pytest.raises(NotWorkerInitError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_load_worker_init_set_but_func_lacks_gp_context_raises() -> None:
+    reg = _make_registry(_job_without_context)
+    reg.register_init(_make_handle)
+    init_dot = f"{_make_handle.__module__}.{_make_handle.__qualname__}"
+    func_dot = f"{_job_without_context.__module__}.{_job_without_context.__qualname__}"
+    mgr = FakeManager({"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot)})
+    with pytest.raises(JobSignatureError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_load_func_has_gp_context_but_no_worker_init_raises() -> None:
+    reg = _make_registry(_job_with_context)
+    func_dot = f"{_job_with_context.__module__}.{_job_with_context.__qualname__}"
+    mgr = FakeManager({"j": GPJobConfig(func=func_dot, cron="* * * * *")})
+    with pytest.raises(JobSignatureError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_load_gp_context_in_kwargs_is_reserved() -> None:
+    reg = _make_registry(_job_without_context)
+    func_dot = f"{_job_without_context.__module__}.{_job_without_context.__qualname__}"
+    mgr = FakeManager({"j": GPJobConfig(func=func_dot, cron="* * * * *", kwargs={"gp_context": 1})})
+    with pytest.raises(ReservedKeyError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_load_process_job_with_worker_init_preflights_wrapper() -> None:
+    """The wrapper is picklable; process preflight must accept it."""
+    _reset_cache_for_test()
+    reg = _make_registry(_job_with_context)
+    reg.register_init(_make_handle)
+    init_dot = f"{_make_handle.__module__}.{_make_handle.__qualname__}"
+    func_dot = f"{_job_with_context.__module__}.{_job_with_context.__qualname__}"
+    mgr = FakeManager(
+        {
+            "j": GPJobConfig(
+                func=func_dot,
+                cron="* * * * *",
+                worker_init=init_dot,
+                executor="process",
+                args=[5],
+            )
+        }
+    )
+    jobs = _load(mgr, reg, _sched_config(executor="process"))
+    import pickle
+
+    pickle.dumps(jobs[0].func)  # must not raise

@@ -19,10 +19,12 @@ from typing import TYPE_CHECKING, Any
 from apscheduler.triggers.cron import CronTrigger
 
 from gpscheduler.config import GPSchedulerConfig
+from gpscheduler.context import GP_CONTEXT_KEY, _ContextualFunc
 from gpscheduler.cron import parse_cron
 from gpscheduler.exceptions import (
     JobSignatureError,
     NotScheduledError,
+    NotWorkerInitError,
     ReservedKeyError,
 )
 from gpscheduler.registry import Registry
@@ -135,10 +137,14 @@ def _validate_one(
     # (b) Cron parse (ADR-0007).
     trigger = cron_parser(job_cfg.cron, _tz(sched_config))
 
-    # (c) Reserved-key check (ADR-0006).
+    # (c) Reserved-key check (ADR-0006 + gp_context).
     if GP_GLOBALS_KEY in job_cfg.kwargs:
         raise ReservedKeyError(
             f"job {name!r}: kwargs must not contain reserved key {GP_GLOBALS_KEY!r} (ADR-0006)"
+        )
+    if GP_CONTEXT_KEY in job_cfg.kwargs:
+        raise ReservedKeyError(
+            f"job {name!r}: kwargs must not contain reserved key {GP_CONTEXT_KEY!r}"
         )
 
     # (d) Conditional gp_globals injection (ADR-0006) — does the func declare it?
@@ -146,17 +152,47 @@ def _validate_one(
     if _signature_declares_gp_globals(func):
         effective_kwargs[GP_GLOBALS_KEY] = sched_config.job_globals
 
-    # (e) signature.bind (ADR-0003).
-    _bind_check(func, job_cfg.args, effective_kwargs, name)
+    # (g) worker_init resolution + gp_context contract (per-job worker_init design).
+    func_params = inspect.signature(func).parameters
+    declares_gp_context = GP_CONTEXT_KEY in func_params
+    init_func: Callable[..., Any] | None = None
+    if job_cfg.worker_init is not None:
+        init_func = _lookup_init(registry, job_cfg.worker_init, name)
+        if not declares_gp_context:
+            raise JobSignatureError(
+                f"job {name!r}: worker_init is configured but the function "
+                f"{func.__qualname__!r} does not declare a 'gp_context' parameter"
+            )
+    elif declares_gp_context:
+        raise JobSignatureError(
+            f"job {name!r}: function {func.__qualname__!r} declares 'gp_context' "
+            "but no worker_init is configured"
+        )
+
+    # (e) signature.bind (ADR-0003). gp_context is injected at call time by the
+    # wrapper, so exclude it from the bind check (user never supplies it).
+    bind_params = {k: v for k, v in func_params.items() if k != GP_CONTEXT_KEY}
+    _bind_check_with_params(func, bind_params, job_cfg.args, effective_kwargs, name)
+
+    # Wrap func with the context injector if worker_init is set (before preflight,
+    # so preflight sees the picklable wrapper).
+    effective_func: Callable[..., Any] = func
+    if init_func is not None:
+        effective_func = _ContextualFunc(
+            func_dotpath=job_cfg.func,
+            worker_init_dotpath=job_cfg.worker_init,
+            job_name=name,
+            gp_globals=sched_config.job_globals,
+        )
 
     # (f) executor resolution + pickle preflight for process jobs (ADR-0013).
     executor = _resolve_executor(job_cfg.executor, sched_config.executor)
     if executor == "process":
-        _preflight_pickle(func, job_cfg.args, effective_kwargs)
+        _preflight_pickle(effective_func, job_cfg.args, effective_kwargs)
 
     return LoadedJob(
         name=name,
-        func=func,
+        func=effective_func,
         trigger=trigger,
         args=list(job_cfg.args),
         kwargs=effective_kwargs,
@@ -179,20 +215,36 @@ def _lookup(registry: Registry, dotted: str, job_name: str) -> Callable[..., Any
         ) from None
 
 
+def _lookup_init(registry: Registry, dotted: str, job_name: str) -> Callable[..., Any]:
+    try:
+        return registry.get_init(dotted)
+    except KeyError:
+        raise NotWorkerInitError(
+            f"job {job_name!r}: worker_init {dotted!r} is not a registered "
+            "@worker_init function. Is the function decorated with @worker_init "
+            "and its package imported?"
+        ) from None
+
+
 def _signature_declares_gp_globals(func: Callable[..., Any]) -> bool:
     sig = inspect.signature(func)
     params = sig.parameters
     return GP_GLOBALS_KEY in params
 
 
-def _bind_check(
+def _bind_check_with_params(
     func: Callable[..., Any],
+    params: dict[str, inspect.Parameter],
     args: list[Any],
     kwargs: dict[str, Any],
     job_name: str,
 ) -> None:
+    """Bind-check args/kwargs against ``params`` (a filtered signature.parameters).
+
+    Used to exclude gp_context, which is injected at call time, not supplied by config.
+    """
     try:
-        inspect.signature(func).bind(*args, **kwargs)
+        inspect.Signature(parameters=list(params.values())).bind(*args, **kwargs)
     except TypeError as e:
         raise JobSignatureError(
             f"job {job_name!r}: arguments do not bind to {func.__qualname__!r}: {e}"
