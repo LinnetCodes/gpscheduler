@@ -46,5 +46,7 @@ def test_all_exported_from_package() -> None:
         "CronExpressionError",
         "JobSignatureError",
         "ReservedKeyError",
+        "WorkerInitError",
+        "NotWorkerInitError",
     ]:
         assert hasattr(gpscheduler, name), f"{name} not exported from gpscheduler"

@@ -20,3 +20,8 @@ def test_version_is_pep440_like() -> None:
     assert _VERSION_RE.match(gpscheduler.__version__), (
         f"__version__={gpscheduler.__version__!r} is not a valid PEP 440 version"
     )
+
+
+def test_worker_init_is_exported() -> None:
+    for name in ("worker_init", "WorkerInitError", "NotWorkerInitError"):
+        assert hasattr(gpscheduler, name), f"{name} not exported"
