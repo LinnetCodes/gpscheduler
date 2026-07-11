@@ -1,0 +1,28 @@
+# Job: "ping_db". Demonstrates worker_init + gp_context (thread executor).
+#
+# The `worker_init:` field (dot-path) points at a @worker_init function. On the
+# job's FIRST execution, gpscheduler calls that init function and caches its
+# return value; every subsequent execution reuses the same object, injected
+# into the job function as `gp_context`.
+#
+# The init function (demo_jobs.db.init_db_handler) declares `gp_globals`, so it
+# receives scheduler.yaml:job_globals — config flows IN via gp_globals, the
+# heavy object flows OUT via gp_context. The job function declares `gp_context`
+# to receive the object.
+#
+# This job uses the default (thread) executor, so the init runs once in the
+# main process and is shared across all runs. Watch: connect_count increments
+# on every run but init_db_handler prints only ONCE (first run).
+cfg_class_name: GPJobConfig
+
+func: "demo_jobs.db.ping_db"
+
+# The worker_init function to call once per execution context.
+worker_init: "demo_jobs.db.init_db_handler"
+
+# Every 5 seconds — frequent enough to see reuse quickly.
+cron: "*/5 * * * * *"
+
+# No args/kwargs: ping_db() takes only gp_context (injected at call time).
+args: []
+kwargs: {}

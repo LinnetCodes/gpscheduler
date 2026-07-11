@@ -1,0 +1,23 @@
+# Job: "maintenance". Demonstrates enable: false (ADR-0005).
+#
+# A disabled job is STILL fully validated — Registry lookup of `func`, cron
+# parse, and signature bind all run. But the loader excludes it from the
+# returned job list, so APScheduler never registers it. `gpscheduler list-jobs`
+# will NOT show it. Flip `enable: true` to activate it.
+#
+# This Fail-Early behavior catches config rot: a typo here fails at load time,
+# not the day someone re-enables the job.
+cfg_class_name: GPJobConfig
+
+func: "demo_jobs.maintenance.rebuild_index"
+
+# Weekly: every Monday at 02:00 local. `0` in the day-of-week field = Monday
+# for CronTrigger.from_crontab (5-segment form).
+cron: "0 2 * * 1"
+
+# No args or kwargs: rebuild_index() takes none.
+args: []
+kwargs: {}
+
+# Disabled: validated but not registered.
+enable: false

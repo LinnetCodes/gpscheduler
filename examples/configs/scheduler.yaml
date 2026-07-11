@@ -1,0 +1,44 @@
+# Scheduler-level configuration (GPSchedulerConfig). Exactly one per cfg_folder.
+#
+# `cfg_class_name` is required by gpconfig's auto-detection: the manager reads
+# this string and hydrates the file into the matching registered GPConfig
+# subclass (here GPSchedulerConfig). GPSchedulerConfig uses extra="forbid", so
+# every key below must be a declared field — typos or unknown keys raise a
+# ConfigValidationError at load time (Fail-Early).
+cfg_class_name: GPSchedulerConfig
+
+# Identifies which GPConfigurable this config is for. gpscheduler does not
+# instantiate a configurable object from this file, but the field has a default
+# ("GPScheduler") and must typecheck as str.
+configured_class_name: GPScheduler
+
+# Default executor for jobs that don't override it (ADR-0013). Individual jobs
+# override via their own `executor:` field. Here the default is the thread pool;
+# the compute_stats job overrides to `process`.
+executor: thread
+
+# Cron interpretation timezone. Empty string "" means "local timezone at parse
+# time". Set a tz database name to pin cron evaluation regardless of host tz.
+timezone: "Asia/Shanghai"
+
+# Worker pool size. Applies to BOTH the thread pool and the process pool.
+max_workers: 10
+
+# Graceful-shutdown timeout in seconds. On shutdown the scheduler waits this
+# long for running jobs, then forces termination. `null` (None) = wait forever.
+timeout: 600
+
+# Packages to import at load time so @scheduled side-effects fire. The loader
+# calls importlib.import_module(pkg) for each. `demo_jobs/__init__.py` imports
+# its job submodules, so importing "demo_jobs" registers every decorated
+# function. Add real packages here for your own project.
+packages:
+  - demo_jobs
+
+# Business globals injected into jobs that declare a `gp_globals` parameter
+# (ADR-0006). Jobs WITHOUT that parameter never see this dict. Only the
+# `cleanup` job declares gp_globals in this demo, so only it receives it.
+job_globals:
+  work_dir: "/tmp/gpscheduler_demo"
+  db_url: "postgresql://localhost/demo"
+  api_key: "sk-demo-key-EXAMPLE"

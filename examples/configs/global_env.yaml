@@ -1,0 +1,14 @@
+# Global environment configuration.
+#
+# This is the ONE special file gpconfig requires at the cfg_folder root. Unlike
+# every other file here, it is NOT a GPConfig subclass instance — it carries no
+# `cfg_class_name`. gpconfig loads it as a raw flat mapping and exposes it
+# read-only (manager.global_env). A folder without global_env.yaml is rejected
+# as invalid by GPConfigManager.
+#
+# Put project-wide, cross-cutting values here. gpscheduler itself does not read
+# any of these keys — they are available to your job functions via
+# `manager.global_env` / `manager.get_config("global_env.<key>")` if you obtain
+# the manager in your job.
+project: gpscheduler
+demo_mode: true

@@ -1,0 +1,33 @@
+# Job: "compute_stats". Demonstrates worker_init + the PROCESS executor.
+#
+# This is the trickiest combination: worker_init + executor: process. The init
+# runs once per WORKER PROCESS (not once per run, not once globally). gpscheduler
+# pickles the job's dispatch function into spawned workers; the worker re-imports
+# the packages (so @worker_init/@scheduled re-register) and builds the init
+# object inside the worker — it never crosses the process boundary, so it can be
+# any type (sockets, locks, models).
+#
+# Watch: init_stats_client prints once per worker process on its first run;
+# client_id stays the same across runs within the same worker (reuse). With
+# max_workers=1 there's one worker, so you'll see one init then repeated reuse.
+cfg_class_name: GPJobConfig
+
+func: "demo_jobs.compute.compute_stats"
+
+# The worker_init function — built once per worker process, reused after.
+worker_init: "demo_jobs.compute.init_stats_client"
+
+# Every 10seconds.
+cron: "*/10 * * * * *"
+
+# Positional: dataset name. -> compute_stats("metrics").
+args:
+  - "metrics"
+
+# Keyword: iteration count. -> iterations=5000.
+kwargs:
+  iterations: 5000
+
+# Override the scheduler default ("thread") to run in the process pool.
+# This is what makes the worker_init spawn-path get exercised.
+executor: process

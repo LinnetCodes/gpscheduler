@@ -1,0 +1,19 @@
+# Job: "cleanup". Demonstrates job_globals injection.
+#
+# The target function `cleanup` declares a `gp_globals` parameter. At load time
+# the loader detects that parameter and injects scheduler.yaml:job_globals into
+# the job's kwargs automatically. So this file does NOT (and must not) mention
+# gp_globals in its kwargs — only the function signature triggers injection.
+cfg_class_name: GPJobConfig
+
+func: "demo_jobs.cleanup.cleanup"
+
+# Every day at 03:30 local (timezone from scheduler.yaml: "Asia/Shanghai").
+cron: "30 3 * * *"
+
+# Positional arg: retention_days. -> cleanup(7, gp_globals={...injected...}).
+args:
+  - 7
+
+# No kwargs here. `gp_globals` is injected by the scheduler, NOT written here.
+kwargs: {}

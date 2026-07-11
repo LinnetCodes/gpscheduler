@@ -1,0 +1,23 @@
+# Job: "hello" (filename stem = job id). Demonstrates args/kwargs.
+#
+# A job file hydrates into GPJobConfig (auto-detected via cfg_class_name).
+# Required fields: `func` (dotted path to a @scheduled function) and `cron`.
+# Optional: args, kwargs, executor, enable. GPJobConfig uses extra="forbid".
+cfg_class_name: GPJobConfig
+
+# Must EXACTLY equal the decorated function's registry key,
+# f"{__module__}.{__qualname__}". demo_jobs/hello.py defines `def greet`, so:
+func: "demo_jobs.hello.greet"
+
+# 6-segment cron: second minute hour day month day_of_week. Leading second
+# field enables sub-minute scheduling. "*/2 * * * * *" = every 2 seconds.
+cron: "*/2 * * * * *"
+
+# Positional args bound left-to-right: greet(*args). -> greet("gpscheduler").
+args:
+  - "gpscheduler"
+
+# Keyword args bound by name: greet(**kwargs). -> greeting="Hi".
+# NOTE: never put `gp_globals` here — it is a reserved key (ReservedKeyError).
+kwargs:
+  greeting: "Hi"
