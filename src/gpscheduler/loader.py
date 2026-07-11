@@ -22,6 +22,7 @@ from gpscheduler.config import GPSchedulerConfig
 from gpscheduler.context import GP_CONTEXT_KEY, _dispatch_contextual_job
 from gpscheduler.cron import parse_cron
 from gpscheduler.exceptions import (
+    CronExpressionError,
     JobSignatureError,
     NotScheduledError,
     NotWorkerInitError,
@@ -63,17 +64,34 @@ def _resolve_executor(job_executor: str | None, sched_executor: str) -> str:
     return job_executor or sched_executor or "thread"
 
 
+def _src(job_cfg: Any) -> str:
+    """Format a config-file source prefix for error messages.
+
+    gpconfig populates ``cfg_file_path`` on every loaded config (the absolute
+    Path to the YAML file). Including it in error messages lets users locate
+    which file is wrong — e.g. ``"jobs/compute_stats.yaml: invalid cron ..."``.
+    Falls back to the job name if the path is absent (defensive; the loader
+    always loads via the manager, which sets it).
+    """
+    path = getattr(job_cfg, "cfg_file_path", None)
+    if path:
+        return f"{path}"
+    name = getattr(job_cfg, "name", "<unknown>")
+    return f"job {name!r}"
+
+
 def _preflight_pickle(
     func: Callable[..., Any],
     args: list[Any],
     kwargs: dict[str, Any],
+    src: str,
 ) -> None:
     """Ensure process-executor arguments are picklable (ADR-0013, Fail-Early)."""
     try:
         pickle.dumps((func, args, kwargs))
     except (pickle.PicklingError, TypeError, AttributeError) as e:
         raise JobSignatureError(
-            f"process-executor job {getattr(func, '__qualname__', func)!r} has "
+            f"{src}: process-executor job {getattr(func, '__qualname__', func)!r} has "
             f"non-picklable args/kwargs: {e}"
         ) from e
 
@@ -131,21 +149,27 @@ def _validate_one(
     sched_config: GPSchedulerConfig,
     cron_parser: CronParserFn,
 ) -> LoadedJob:
-    # (a) Registry lookup (ADR-0004 strict).
-    func = _lookup(registry, job_cfg.func, name)
+    # Source identifier for error messages: the config file path (set by
+    # gpconfig on every loaded config), so users can see WHICH file is wrong.
+    src = _src(job_cfg)
 
-    # (b) Cron parse (ADR-0007).
-    trigger = cron_parser(job_cfg.cron, _tz(sched_config))
+    # (a) Registry lookup (ADR-0004 strict).
+    func = _lookup(registry, job_cfg.func, src)
+
+    # (b) Cron parse (ADR-0007). cron_parser is generic (no file context), so
+    # catch and re-raise with the source path attached.
+    try:
+        trigger = cron_parser(job_cfg.cron, _tz(sched_config))
+    except CronExpressionError as e:
+        raise CronExpressionError(f"{src}: {e}") from e
 
     # (c) Reserved-key check (ADR-0006 + gp_context).
     if GP_GLOBALS_KEY in job_cfg.kwargs:
         raise ReservedKeyError(
-            f"job {name!r}: kwargs must not contain reserved key {GP_GLOBALS_KEY!r} (ADR-0006)"
+            f"{src}: kwargs must not contain reserved key {GP_GLOBALS_KEY!r} (ADR-0006)"
         )
     if GP_CONTEXT_KEY in job_cfg.kwargs:
-        raise ReservedKeyError(
-            f"job {name!r}: kwargs must not contain reserved key {GP_CONTEXT_KEY!r}"
-        )
+        raise ReservedKeyError(f"{src}: kwargs must not contain reserved key {GP_CONTEXT_KEY!r}")
 
     # (d) Conditional gp_globals injection (ADR-0006) — does the func declare it?
     effective_kwargs = dict(job_cfg.kwargs)
@@ -157,12 +181,12 @@ def _validate_one(
     declares_gp_context = GP_CONTEXT_KEY in func_params
     init_func: Callable[..., Any] | None = None
     if job_cfg.worker_init is not None:
-        init_func = _lookup_init(registry, job_cfg.worker_init, name)
+        init_func = _lookup_init(registry, job_cfg.worker_init, src)
         # Resolved only to validate registration (raises NotWorkerInitError if
-        # unregistered); the wrapper re-resolves by dot-path at call time.
+        # unregistered); the dispatcher re-resolves by dot-path at call time.
         if not declares_gp_context:
             raise JobSignatureError(
-                f"job {name!r}: worker_init is configured but the function "
+                f"{src}: worker_init is configured but the function "
                 f"{func.__qualname__!r} does not declare a 'gp_context' parameter"
             )
         # Bind-validate the init function's signature (Fail-Early): gpscheduler
@@ -172,17 +196,17 @@ def _validate_one(
         init_kwargs: dict[str, Any] = {}
         if GP_GLOBALS_KEY in init_params:
             init_kwargs[GP_GLOBALS_KEY] = sched_config.job_globals
-        _bind_check_with_params(init_func, init_params, [], init_kwargs, name)
+        _bind_check_with_params(init_func, init_params, [], init_kwargs, src)
     elif declares_gp_context:
         raise JobSignatureError(
-            f"job {name!r}: function {func.__qualname__!r} declares 'gp_context' "
+            f"{src}: function {func.__qualname__!r} declares 'gp_context' "
             "but no worker_init is configured"
         )
 
     # (f) signature.bind (ADR-0003). gp_context is injected at call time by the
-    # wrapper, so exclude it from the bind check (user never supplies it).
+    # dispatcher, so exclude it from the bind check (user never supplies it).
     bind_params = {k: v for k, v in func_params.items() if k != GP_CONTEXT_KEY}
-    _bind_check_with_params(func, bind_params, job_cfg.args, effective_kwargs, name)
+    _bind_check_with_params(func, bind_params, job_cfg.args, effective_kwargs, src)
 
     # (g) Dispatch via the module-level _dispatch_contextual_job if worker_init
     # is set. APScheduler stores job.func as a dotted-path reference (func_ref)
@@ -205,7 +229,7 @@ def _validate_one(
     # (h) executor resolution + pickle preflight for process jobs (ADR-0013).
     executor = _resolve_executor(job_cfg.executor, sched_config.executor)
     if executor == "process":
-        _preflight_pickle(effective_func, effective_args, effective_kwargs)
+        _preflight_pickle(effective_func, effective_args, effective_kwargs, src)
 
     return LoadedJob(
         name=name,
@@ -222,22 +246,22 @@ def _tz(sched_config: GPSchedulerConfig) -> str | None:
     return sched_config.timezone or None
 
 
-def _lookup(registry: Registry, dotted: str, job_name: str) -> Callable[..., Any]:
+def _lookup(registry: Registry, dotted: str, src: str) -> Callable[..., Any]:
     try:
         return registry.get(dotted)
     except KeyError:
         raise NotScheduledError(
-            f"job {job_name!r}: func {dotted!r} is not registered. "
+            f"{src}: func {dotted!r} is not registered. "
             "Is the function decorated with @scheduled and its package imported?"
         ) from None
 
 
-def _lookup_init(registry: Registry, dotted: str, job_name: str) -> Callable[..., Any]:
+def _lookup_init(registry: Registry, dotted: str, src: str) -> Callable[..., Any]:
     try:
         return registry.get_init(dotted)
     except KeyError:
         raise NotWorkerInitError(
-            f"job {job_name!r}: worker_init {dotted!r} is not a registered "
+            f"{src}: worker_init {dotted!r} is not a registered "
             "@worker_init function. Is the function decorated with @worker_init "
             "and its package imported?"
         ) from None
@@ -254,7 +278,7 @@ def _bind_check_with_params(
     params: dict[str, inspect.Parameter],
     args: list[Any],
     kwargs: dict[str, Any],
-    job_name: str,
+    src: str,
 ) -> None:
     """Bind-check args/kwargs against ``params`` (a filtered signature.parameters).
 
@@ -264,5 +288,5 @@ def _bind_check_with_params(
         inspect.Signature(parameters=list(params.values())).bind(*args, **kwargs)
     except TypeError as e:
         raise JobSignatureError(
-            f"job {job_name!r}: arguments do not bind to {func.__qualname__!r}: {e}"
+            f"{src}: arguments do not bind to {func.__qualname__!r}: {e}"
         ) from e

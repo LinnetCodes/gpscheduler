@@ -56,5 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on Ctrl+C. On Windows, Ctrl+C is broadcast to the whole process group and an
   uninterruptible worker raised from its `call_queue.get()` block. Workers now
   ignore SIGINT (`SIG_IGN`) so only the main process responds to Ctrl+C (ADR-0014).
+- Config-validation errors now include the offending file's path. Previously a
+  bad cron or unregistered `func` reported only the job name (filename stem);
+  now the message leads with the absolute path (e.g.
+  `jobs/compute_stats.yaml: invalid cron expression ...`), making it easy to
+  locate which config file is wrong.
 
 [Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/initial...HEAD
