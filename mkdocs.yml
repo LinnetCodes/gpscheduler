@@ -58,8 +58,12 @@ plugins:
 # --------------------------------------------------------------- navigation ---
 nav:
   - Home: index.md
-  - Worker initialization: worker_init.md
-  # - API reference: api.md   # enable once mkdocstrings hooks are wired up
+  - Overview: overview.md
+  - API reference: api.md
+  - CLI: cli.md
+  - Configuration: configuration.md
+  - Examples: examples.md
+  - Performance: performance.md
 
 # ------------------------------------------------------- markdown extensions --
 markdown_extensions:
@@ -70,3 +74,9 @@ markdown_extensions:
       anchor_linenums: true
   - toc:
       permalink: true
+      # Use a Unicode-aware slugifier so Chinese headings produce stable,
+      # linkable anchors (the default slugifier strips non-ASCII characters).
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+          sep: "-"

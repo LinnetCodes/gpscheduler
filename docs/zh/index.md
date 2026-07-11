@@ -5,14 +5,27 @@ GPScheduler（通用调度器，General-Purpose Scheduler）是一个 cron 风�
 
 > 本文档为中英双语。点击顶部栏的语言选择器可切换至 English。
 
-## 概览
+## 特性
 
-- **配置驱动** —— 在配置文件中声明调度计划与可调用对象，无需在应用代码里硬编码定时器。
-- **不绑定特定包** —— 任务可指向任意已安装包中可导入的函数。
-- **装饰器支持** —— 可直接在源码中用装饰器标记可调度函数。
-- **启动参数** —— 在调度时为任务传入参数。
-
-> API 参考与教程将随库的逐步成型而补充。
+- **配置驱动的 cron 任务** —— 在 YAML 配置文件中声明调度计划、可调用对象与调用参数，
+  无需在应用代码里硬编码定时器。见[配置](configuration.md)。
+- **不绑定特定包** —— 任务可指向任意已安装包中可导入的函数，通过 dotted path 定位。
+  `@scheduled` 装饰器可直接在源码中标记可调度函数。见
+  [API 参考 → scheduled](api.md#scheduled)。
+- **线程与进程两种 executor** —— 每个 job 各自选择线程池或进程池。I/O 密集型走线程，
+  CPU 密集型或需要隔离的走进程。见[性能](performance.md)。
+- **按 job 复用的初始化器** —— `@worker_init` 装饰器构建一次成本很高的对象（数据库连接、
+  网络客户端……），并在该 job 的多次运行中复用。见
+  [API 参考 → worker_init](api.md#worker_init)。
+- **调度器级全局变量** —— 共享的配置值（`db_url`、`api_key`……）注入到所有声明了它的
+  job 中。见[配置 → job_globals](configuration.md#job_globals-与-gp_globals)。
+- **跨平台的优雅关停** —— Windows 下用 `Ctrl+C`，Linux 下用 `SIGINT`/`SIGTERM`，支持可配置
+  的关停超时。见 [CLI](cli.md)。
+- **Fail-Early 校验** —— 无效的配置（错误的 cron、未注册的函数、参数不匹配、process job 的
+  参数不可 pickle）会在加载时立即报错，绝不在首次触发时静默失败。见
+  [概览 → Fail-Early](overview.md#fail-early)。
+- **可嵌入** —— 可通过 CLI 独立运行，也可嵌入宿主应用。见
+  [API 参考 → 嵌入式用法](api.md#嵌入式用法)。
 
 ## 安装
 
@@ -29,4 +42,53 @@ pip install -e ".[dev]"
 
 ## 快速上手
 
-*（待核心 API 实现后补充。）*
+1. 安装 gpscheduler（见上）。
+2. 编写一个包含 `@scheduled` 函数的包：
+
+   ```python
+   # myjobs/hello.py
+   from gpscheduler import scheduled
+
+   @scheduled
+   def greet(name: str, *, greeting: str = "Hello") -> None:
+       print(f"{greeting}, {name}!")
+   ```
+
+3. 用配置文件夹指向它：
+
+   ```yaml
+   # configs/scheduler.yaml
+   cfg_class_name: GPSchedulerConfig
+   configured_class_name: GPScheduler
+   executor: thread
+   packages: [myjobs]
+   ```
+
+   ```yaml
+   # configs/jobs/hello.yaml
+   cfg_class_name: GPJobConfig
+   func: "myjobs.hello.greet"
+   cron: "*/2 * * * * *"   # 每 2 秒（6 段式，带前导秒字段）
+   args: ["world"]
+   kwargs:
+     greeting: "Hi"
+   ```
+
+4. 运行：
+
+   ```bash
+   gpscheduler run --config configs
+   ```
+
+完整带注释的 demo 见[使用样例](examples.md)，完整配置参考见[配置](configuration.md)。
+
+## 文档
+
+| 页面 | 内容 |
+| --- | --- |
+| [概览](overview.md) | 设计目的、架构、使用场景、限制 |
+| [API 参考](api.md) | 公共 API：装饰器、类、配置数据类、异常、嵌入式用法 |
+| [CLI](cli.md) | `gpscheduler` 命令（`run`、`list-jobs`） |
+| [配置](configuration.md) | gpconfig 文件夹布局、配置字段、cron 格式 |
+| [使用样例](examples.md) | 端到端 demo 演示 |
+| [性能](performance.md) | 线程 vs 进程 executor、跨平台注意事项 |

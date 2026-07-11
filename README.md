@@ -16,11 +16,21 @@ arguments, and exposes a decorator to mark schedulable functions.
 
 ## Features
 
-- **Config-driven jobs** — declare schedules and callables in a config file instead of
-  hardcoding timers in application code.
-- **Package-agnostic** — point a job at any importable function in any installed package.
-- **Decorator support** — mark a function as schedulable directly in its source.
-- **Startup arguments** — pass arguments to jobs at schedule time.
+- **Config-driven cron jobs** — declare schedules, callables, and call arguments in YAML
+  config files; no timers hardcoded in application code.
+- **Package-agnostic** — point a job at any importable function in any installed package,
+  located by dotted path.
+- **Two decorators** — `@scheduled` marks a function as schedulable; `@worker_init` builds
+  an expensive object (DB connection, network client, …) once and reuses it across runs.
+- **Thread and process executors** — each job picks its own pool. Threads for I/O-bound
+  work, processes for CPU-bound or isolated work.
+- **Scheduler-wide globals** — shared config values (`db_url`, `api_key`, …) injected into
+  every job that asks for them.
+- **Graceful, cross-platform shutdown** — `Ctrl+C` on Windows, `SIGINT`/`SIGTERM` on
+  Linux, with a configurable shutdown timeout.
+- **Fail-Early validation** — invalid config fails loudly at load time, never silently at
+  the first trigger.
+- **Embeddable** — run standalone via the CLI, or embed it inside a host application.
 
 ## Installation
 
@@ -37,7 +47,54 @@ pip install -e ".[dev]"
 
 ## Quick start
 
-*(To be filled in once the core API is implemented.)*
+1. Install gpscheduler (see [Installation](#installation)).
+
+2. Write a package containing a `@scheduled` function:
+
+   ```python
+   # myjobs/hello.py
+   from gpscheduler import scheduled
+
+   @scheduled
+   def greet(name: str, *, greeting: str = "Hello") -> None:
+       print(f"{greeting}, {name}!")
+   ```
+
+3. Point a config folder at it:
+
+   ```yaml
+   # configs/scheduler.yaml
+   cfg_class_name: GPSchedulerConfig
+   configured_class_name: GPScheduler
+   executor: thread
+   packages: [myjobs]
+   ```
+
+   ```yaml
+   # configs/jobs/hello.yaml
+   cfg_class_name: GPJobConfig
+   func: "myjobs.hello.greet"
+   cron: "*/2 * * * * *"   # every 2 seconds (6-segment, leading seconds field)
+   args: ["world"]
+   kwargs:
+     greeting: "Hi"
+   ```
+
+   The config folder also needs a `global_env.yaml` (required by the underlying
+   [gpconfig](https://github.com/LinnetCodes/gpconfig) loader) — an empty `{}` is fine.
+
+4. Run it:
+
+   ```bash
+   gpscheduler run --config configs
+   ```
+
+   Use `gpscheduler list-jobs --config configs` for a dry run that validates config and
+   lists enabled jobs without starting anything.
+
+See the [Examples](https://linnetcodes.github.io/gpscheduler/examples/) page in the docs
+for a complete, annotated demo covering arguments, `job_globals` injection, `worker_init`
+in both thread and process pools, and more.
 
 ## Documentation
 
