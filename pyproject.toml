@@ -127,3 +127,6 @@ disable_error_code = ["misc"]
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

@@ -24,7 +24,7 @@ from loguru import logger as loguru_logger
 
 from gpscheduler.config import GPSchedulerConfig
 from gpscheduler.exceptions import ConfigError
-from gpscheduler.loader import load_jobs
+from gpscheduler.loader import _default_import_packages, load_jobs
 from gpscheduler.signals import install_shutdown_handler
 
 if TYPE_CHECKING:
@@ -69,6 +69,36 @@ def _process_init() -> None:
     # consistent with ADR-0008's "main process owns signals" architecture. See
     # ADR-0014 for the full rationale.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+class _ProcessWorkerInitializer:
+    """Picklable process-pool initializer: gpclog + SIG_IGN + import packages.
+
+    Runs in every spawned worker on start. Does the work of ``_process_init``
+    (gpclog + SIG_IGN, ADR-0012/0014) AND imports the configured ``packages`` so
+    the worker's process-global Registry is populated — required for
+    ``worker_init`` jobs, whose ``_ContextualFunc`` wrapper re-resolves the
+    init/func by dotted path via the Registry at call time. Without this, a
+    spawned worker's Registry is empty and ``registry.get``/``get_init`` raise
+    ``KeyError``.
+
+    Must be a module-level class (not a closure) so it pickles by reference
+    into spawned workers — the same picklability constraint as
+    ``_ContextualFunc``. ``packages`` is a list of strings (picklable).
+    """
+
+    def __init__(self, packages: list[str]) -> None:
+        self._packages = list(packages)
+
+    def __call__(self) -> None:
+        _process_init()
+        _default_import_packages(self._packages)
+
+    def __getstate__(self) -> dict[str, object]:
+        return {"_packages": self._packages}
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self._packages = state["_packages"]  # type: ignore[assignment]
 
 
 class GPScheduler(GPConfigurable):
@@ -186,11 +216,21 @@ class GPScheduler(GPConfigurable):
                 "thread": ThreadPoolExecutor(max_workers=self.config.max_workers),
                 "process": ProcessPoolExecutor(
                     max_workers=self.config.max_workers,
-                    pool_kwargs={"initializer": _process_init},
+                    pool_kwargs={"initializer": self._make_process_initializer()},
                 ),
             },
             timezone=tz,
         )
+
+    def _make_process_initializer(self) -> _ProcessWorkerInitializer:
+        """Build a picklable process-pool initializer for this scheduler.
+
+        Returns a ``_ProcessWorkerInitializer`` instance carrying the configured
+        ``packages``. The initializer runs in every spawned worker on start:
+        gpclog + SIG_IGN (ADR-0012/0014) plus importing ``packages`` so the
+        worker's Registry is populated for ``worker_init`` jobs.
+        """
+        return _ProcessWorkerInitializer(self.config.packages)
 
 
 def create_scheduler(

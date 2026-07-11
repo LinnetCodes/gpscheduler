@@ -8,12 +8,16 @@ Two pieces live here:
    returns a single object, and gpscheduler injects that object into the job
    function as ``gp_context``.
 
-2. The ``_ContextualFunc`` wrapper: a picklable, callable class that APScheduler
-   invokes. It lazy-builds the init object on first call (cached per job_name,
-   thread-safe via a lock) and injects it as ``gp_context`` into the job
-   function at call time. It stores only dot-path strings + job_name so it
-   pickles cleanly into spawned process workers; the func and init function are
-   re-resolved by dotted path at call time via the registry.
+2. The ``_dispatch_contextual_job`` function: a module-level dispatcher that
+   APScheduler invokes for worker_init jobs. It lazy-builds the init object on
+   first call (cached per job_name, thread-safe via a lock) and injects it as
+   ``gp_context`` into the job function at call time. The loader registers this
+   function as ``job.func`` and passes the per-job dotpaths + job_name +
+   ``gp_globals`` as leading positional args (all picklable); the func and init
+   are re-resolved by dotted path at call time via the registry. A module-level
+   function (not a callable instance) is required so APScheduler's
+   ``obj_to_ref``/``ref_to_obj`` round-trip survives the process-pool pickle
+   path.
 """
 
 from __future__ import annotations
@@ -130,51 +134,37 @@ def _get_or_create_context(
         return obj
 
 
-class _ContextualFunc:
-    """Picklable job wrapper: lazy-builds and injects the gp_context object.
+def _dispatch_contextual_job(
+    func_dotpath: str,
+    worker_init_dotpath: str,
+    job_name: str,
+    gp_globals: dict[str, Any] | None,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Module-level dispatcher APScheduler invokes for worker_init jobs.
 
-    Stores only dot-path strings + job_name so it pickles cleanly into spawned
-    process workers. func and the init function are re-resolved by dotted path
-    at call time (registrations are rebuilt in each worker on package re-import).
+    Replaces per-job ``_ContextualFunc`` instances: APScheduler stores job funcs
+    by dotted-path reference (``func_ref``) and re-resolves them inside spawned
+    workers via ``ref_to_obj``. A callable *instance* cannot survive that path —
+    ``obj_to_ref(instance)`` returns the *class*, losing instance state. A
+    module-level *function* resolves correctly, so the loader registers THIS
+    function as ``job.func`` and passes the per-job dotpaths + job_name +
+    ``gp_globals`` as leading positional args (all picklable: strings + dict).
+
+    On each call: lazy-builds the init object (cached per job_name, thread-safe),
+    injects it as ``gp_context``, re-resolves the job func by dotpath, and calls
+    it. The func/init are re-resolved from the registry at call time — in a
+    spawned worker, the process-pool initializer has re-imported ``packages`` so
+    the registry is populated.
     """
-
-    def __init__(
-        self,
-        *,
-        func_dotpath: str,
-        worker_init_dotpath: str,
-        job_name: str,
-        gp_globals: dict[str, Any] | None = None,
-    ) -> None:
-        self._func_dotpath = func_dotpath
-        self._worker_init_dotpath = worker_init_dotpath
-        self._job_name = job_name
-        self._gp_globals = gp_globals
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        if GP_CONTEXT_KEY in kwargs:
-            # Load-time guard should prevent this, but defend at runtime too.
-            raise ReservedKeyError(
-                f"{GP_CONTEXT_KEY!r} is reserved and must not be passed directly"
-            )
-        ctx = _get_or_create_context(self._job_name, self._worker_init_dotpath, self._gp_globals)
-        kwargs[GP_CONTEXT_KEY] = ctx
-        func = registry.get(self._func_dotpath)
-        return func(*args, **kwargs)
-
-    def __getstate__(self) -> dict[str, Any]:
-        return {
-            "_func_dotpath": self._func_dotpath,
-            "_worker_init_dotpath": self._worker_init_dotpath,
-            "_job_name": self._job_name,
-            "_gp_globals": self._gp_globals,
-        }
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        self._func_dotpath = state["_func_dotpath"]
-        self._worker_init_dotpath = state["_worker_init_dotpath"]
-        self._job_name = state["_job_name"]
-        self._gp_globals = state["_gp_globals"]
+    if GP_CONTEXT_KEY in kwargs:
+        # Load-time guard should prevent this, but defend at runtime too.
+        raise ReservedKeyError(f"{GP_CONTEXT_KEY!r} is reserved and must not be passed directly")
+    ctx = _get_or_create_context(job_name, worker_init_dotpath, gp_globals)
+    kwargs[GP_CONTEXT_KEY] = ctx
+    func = registry.get(func_dotpath)
+    return func(*args, **kwargs)
 
 
 def _reset_cache_for_test() -> None:

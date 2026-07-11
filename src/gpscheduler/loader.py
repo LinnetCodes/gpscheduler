@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from apscheduler.triggers.cron import CronTrigger
 
 from gpscheduler.config import GPSchedulerConfig
-from gpscheduler.context import GP_CONTEXT_KEY, _ContextualFunc
+from gpscheduler.context import GP_CONTEXT_KEY, _dispatch_contextual_job
 from gpscheduler.cron import parse_cron
 from gpscheduler.exceptions import (
     JobSignatureError,
@@ -184,27 +184,34 @@ def _validate_one(
     bind_params = {k: v for k, v in func_params.items() if k != GP_CONTEXT_KEY}
     _bind_check_with_params(func, bind_params, job_cfg.args, effective_kwargs, name)
 
-    # (g) Wrap func with the context injector if worker_init is set (before preflight,
-    # so preflight sees the picklable wrapper).
+    # (g) Dispatch via the module-level _dispatch_contextual_job if worker_init
+    # is set. APScheduler stores job.func as a dotted-path reference (func_ref)
+    # and re-resolves it in spawned workers; a callable INSTANCE cannot survive
+    # that (obj_to_ref returns the class, losing instance state), so we register
+    # a module-level FUNCTION as job.func and pass the per-job dotpaths +
+    # job_name + gp_globals as leading positional args (all picklable).
     effective_func: Callable[..., Any] = func
+    effective_args: list[Any] = list(job_cfg.args)
     if init_func is not None:
-        effective_func = _ContextualFunc(
-            func_dotpath=job_cfg.func,
-            worker_init_dotpath=job_cfg.worker_init,
-            job_name=name,
-            gp_globals=sched_config.job_globals,
-        )
+        effective_func = _dispatch_contextual_job
+        effective_args = [
+            job_cfg.func,
+            job_cfg.worker_init,
+            name,
+            sched_config.job_globals,
+            *effective_args,
+        ]
 
     # (h) executor resolution + pickle preflight for process jobs (ADR-0013).
     executor = _resolve_executor(job_cfg.executor, sched_config.executor)
     if executor == "process":
-        _preflight_pickle(effective_func, job_cfg.args, effective_kwargs)
+        _preflight_pickle(effective_func, effective_args, effective_kwargs)
 
     return LoadedJob(
         name=name,
         func=effective_func,
         trigger=trigger,
-        args=list(job_cfg.args),
+        args=effective_args,
         kwargs=effective_kwargs,
         executor=executor,
         enable=job_cfg.enable,

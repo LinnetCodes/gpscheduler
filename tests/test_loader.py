@@ -280,14 +280,14 @@ def _bad_init(unexpected_required: str) -> object:  # noqa: ANN201
 
 
 # Register the worker_init job func into the process-global registry so the
-# _ContextualFunc wrapper can resolve it by dotted path at call time (mirrors how
-# real @scheduled functions enter the registry; the per-test local `reg` passed
-# to the loader is not what the wrapper re-resolves against).
+# _dispatch_contextual_job dispatcher can resolve it by dotted path at call time
+# (mirrors how real @scheduled functions enter the registry; the per-test local
+# `reg` passed to the loader is not what the dispatcher re-resolves against).
 _global_registry.register(_job_with_context)
 
 
-def test_load_resolves_worker_init_and_wraps_func() -> None:
-    """A job with worker_init set gets a wrapped func; the init resolves by dotpath."""
+def test_load_resolves_worker_init_and_dispatches() -> None:
+    """A job with worker_init set dispatches via _dispatch_contextual_job."""
     _reset_cache_for_test()
     reg = _make_registry(_job_with_context)
     reg.register_init(_make_handle)
@@ -298,10 +298,11 @@ def test_load_resolves_worker_init_and_wraps_func() -> None:
     )
     jobs = _load(mgr, reg, _sched_config())
     assert len(jobs) == 1
-    # The registered func is the wrapper, not the bare function.
+    # The registered func is the dispatcher, not the bare function.
     assert jobs[0].func is not _job_with_context
-    # Calling it injects gp_context (init ran: returns dict with n=0; a + 0 = 5).
-    assert jobs[0].func(5) == 5
+    # Calling it with the loader-packed args injects gp_context
+    # (init ran: returns dict with n=0; a + 0 = 5).
+    assert jobs[0].func(*jobs[0].args) == 5
 
 
 def test_load_worker_init_not_registered_raises_not_worker_init_error() -> None:
