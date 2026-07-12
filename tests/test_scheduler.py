@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import pytest
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED  # noqa: F401
 
 import gpscheduler  # noqa: F401  (registers config classes)
 from gpscheduler import GPScheduler, GPSchedulerConfig, create_scheduler, run_scheduler
@@ -19,6 +20,18 @@ from gpscheduler.scheduler import _process_init, bridge_apscheduler_logging
 @scheduled
 def _quick_task() -> int:
     return 42
+
+
+@scheduled
+def _counter_task() -> int:
+    """Job whose execution count we verify in max_runs tests."""
+    return 1
+
+
+@scheduled
+def _failing_task() -> None:
+    """Job that raises; used to verify errors still count toward max_runs."""
+    raise ValueError("boom")
 
 
 def test_exported_from_package() -> None:
@@ -231,3 +244,134 @@ def test_gpconfig_errors_translated_to_config_error(tmp_path: Path) -> None:
     # Point at a non-existent folder -> gpconfig raises ConfigFolderError (a GPConfigError).
     with pytest.raises(ConfigError):
         create_scheduler(cfg_folder=tmp_path / "does-not-exist", project_name="gpscheduler_test")
+
+
+def test_register_jobs_records_max_runs() -> None:
+    """register_jobs stores max_runs so the listener can look it up by job_id."""
+    from apscheduler.triggers.cron import CronTrigger
+
+    from gpscheduler.loader import LoadedJob
+
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1)
+    s = GPScheduler(cfg)
+    trigger = CronTrigger.from_crontab("* * * * *")
+    loaded = [
+        LoadedJob(
+            name="limited",
+            func=_counter_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=3,
+        ),
+        LoadedJob(
+            name="unlimited",
+            func=_counter_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=None,
+        ),
+    ]
+    s.register_jobs(loaded)
+    assert s._job_max_runs == {"limited": 3, "unlimited": None}
+
+
+def test_max_runs_removes_job_after_limit() -> None:
+    """A job with max_runs=N is removed after exactly N executions."""
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from gpscheduler.loader import LoadedJob
+
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1)
+    s = GPScheduler(cfg)
+    # Fire immediately, every 0.1s.
+    trigger = IntervalTrigger(seconds=0.1, start_date="2020-01-01")
+    loaded = [
+        LoadedJob(
+            name="capped",
+            func=_counter_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=3,
+        )
+    ]
+    s.register_jobs(loaded)
+    s.start()
+    try:
+        # Wait long enough for 3 executions + the remove to process.
+        time.sleep(2.0)
+        # Job must be gone.
+        job_ids = [j.id for j in s.get_jobs()]
+        assert "capped" not in job_ids
+        # Counter must be exactly 3 (>= would have removed at 3; no 4th run).
+        assert s._run_counts.get("capped") == 3
+    finally:
+        s.shutdown(timeout=2)
+
+
+def test_max_runs_none_means_unlimited() -> None:
+    """A job with max_runs=None runs more than any small limit without removal."""
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from gpscheduler.loader import LoadedJob
+
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1)
+    s = GPScheduler(cfg)
+    trigger = IntervalTrigger(seconds=0.1, start_date="2020-01-01")
+    loaded = [
+        LoadedJob(
+            name="forever",
+            func=_counter_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=None,
+        )
+    ]
+    s.register_jobs(loaded)
+    s.start()
+    try:
+        time.sleep(1.0)
+        # Should have run several times and NOT been removed.
+        job_ids = [j.id for j in s.get_jobs()]
+        assert "forever" in job_ids
+        assert s._run_counts.get("forever", 0) >= 3
+    finally:
+        s.shutdown(timeout=2)
+
+
+def test_max_runs_counts_errors() -> None:
+    """Q1 decision: a job that raises still counts toward max_runs."""
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from gpscheduler.loader import LoadedJob
+
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1)
+    s = GPScheduler(cfg)
+    trigger = IntervalTrigger(seconds=0.1, start_date="2020-01-01")
+    loaded = [
+        LoadedJob(
+            name="fails",
+            func=_failing_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=2,
+        )
+    ]
+    s.register_jobs(loaded)
+    s.start()
+    try:
+        time.sleep(1.5)
+        job_ids = [j.id for j in s.get_jobs()]
+        assert "fails" not in job_ids
+        assert s._run_counts.get("fails") == 2
+    finally:
+        s.shutdown(timeout=2)

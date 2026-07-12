@@ -16,6 +16,7 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 import gpclog
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.executors.pool import ProcessPoolExecutor, ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from gpconfig import GPConfigFolder, GPConfigManager, GPConfigurable
@@ -112,6 +113,13 @@ class GPScheduler(GPConfigurable):
         self._scheduler: BackgroundScheduler = self._build_scheduler()
         self._stop_event: threading.Event = threading.Event()
         self._started = False
+        # max_runs counting (ADR-0016).
+        self._run_counts: dict[str, int] = {}
+        self._job_max_runs: dict[str, int | None] = {}
+        self._run_counts_lock = threading.Lock()
+        self._scheduler.add_listener(
+            self._on_job_run, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR
+        )
 
     @property
     def config(self) -> GPSchedulerConfig:
@@ -136,6 +144,9 @@ class GPScheduler(GPConfigurable):
                 executor=job.executor,
                 replace_existing=True,
             )
+            # Record max_runs for the listener (ADR-0016). Defaults to None
+            # (unlimited) if the LoadedJob predates the field.
+            self._job_max_runs[job.name] = getattr(job, "max_runs", None)
 
     def get_jobs(self) -> list[Any]:
         """Return currently-registered APScheduler jobs."""
@@ -208,6 +219,33 @@ class GPScheduler(GPConfigurable):
         self._logger.info("gpscheduler stopped")
 
     # --- internals ----------------------------------------------------------
+
+    def _on_job_run(self, event: Any) -> None:
+        """max_runs listener: increment count, remove job when limit reached (ADR-0016).
+
+        EVENT_JOB_EXECUTED | EVENT_JOB_ERROR both count (Q1: trigger-then-count).
+        MISSED is not subscribed, so skipped runs don't count. All jobs are
+        counted (including unlimited ones, ``max_runs=None``) for observability;
+        only the removal check is skipped when there is no limit.
+        """
+        job_id = event.job_id
+        limit = self._job_max_runs.get(job_id)
+        with self._run_counts_lock:
+            self._run_counts[job_id] = self._run_counts.get(job_id, 0) + 1
+            count = self._run_counts[job_id]
+        if limit is None:
+            return  # unlimited: count recorded, but never removed
+        if count >= limit:
+            self._logger.info(f"job {job_id!r} reached max_runs={limit}, removing")
+            try:
+                self._scheduler.remove_job(job_id)
+            except Exception:
+                # Job may already be gone (shutdown in progress, or a concurrent
+                # event already removed it). APScheduler's _dispatch_event swallows
+                # listener exceptions (base.py:1041) and logs them at ERROR level;
+                # we catch here to log at DEBUG instead, avoiding noise for this
+                # expected boundary. Not a silent swallow: it is logged.
+                self._logger.debug(f"job {job_id!r} already removed or scheduler stopping")
 
     def _build_scheduler(self) -> BackgroundScheduler:
         tz = self.config.timezone or None
