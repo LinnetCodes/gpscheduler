@@ -73,3 +73,37 @@ def test_list_jobs_with_enabled_job_prints_next_run(tmp_path: Path) -> None:
     # The crash site: must render a next-run time, not crash with AttributeError.
     assert "next run" in result.output.lower()
     assert "(unscheduled)" not in result.output
+
+
+def test_list_jobs_shows_max_runs_value(tmp_path: Path) -> None:
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    (cfg_folder / "jobs" / "demo.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\nmax_runs: 5\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "max_runs: 5" in result.output
+
+
+def test_list_jobs_shows_unlimited_when_max_runs_absent(tmp_path: Path) -> None:
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    (cfg_folder / "jobs" / "demo.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "max_runs: unlimited" in result.output
