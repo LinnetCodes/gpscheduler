@@ -334,6 +334,7 @@ GPSchedulerError                     # 一切的基类
 └── ConfigError                      # 配置问题（包装 gpconfig 失败）
     ├── CronExpressionError          # 无效的 cron 表达式
     ├── JobSignatureError            # 配置的 args/kwargs 无法绑定到签名
+    ├── MaxRunsError                 # job 的 max_runs 不是正整数（bool/float/<=0）
     └── ReservedKeyError             # job 的 kwargs 用了保留键（gp_globals/gp_context）
 ```
 
@@ -345,6 +346,7 @@ GPSchedulerError                     # 一切的基类
 | `CronExpressionError` | cron 表达式段数错误、字段越界、非法字符，或用了 Quartz 扩展。 |
 | `JobSignatureError` | 配置的 `args`/`kwargs` 无法绑定到函数签名，`gp_context`/`worker_init` 契约破坏，或 process job 的参数不可 pickle。 |
 | `ReservedKeyError` | job 的 `kwargs` 包含 `gp_globals` 或 `gp_context`。 |
+| `MaxRunsError` | job 的 `max_runs` 不是正整数 —— 是 bool、float（即使 `1.0`）或 `<= 0`。 |
 | `ConfigError` | 其它任何配置加载失败，包括被包装的 gpconfig 错误。 |
 
 ```python

@@ -366,6 +366,7 @@ GPSchedulerError                     # base for everything
 └── ConfigError                      # configuration problem (wraps gpconfig failures)
     ├── CronExpressionError          # invalid cron expression
     ├── JobSignatureError            # configured args/kwargs can't bind to the signature
+    ├── MaxRunsError                 # a job's max_runs is not a positive int (bool/float/<=0)
     └── ReservedKeyError             # a job's kwargs used a reserved key (gp_globals/gp_context)
 ```
 
@@ -377,6 +378,7 @@ GPSchedulerError                     # base for everything
 | `CronExpressionError` | A cron expression has the wrong segment count, an out-of-range field, an illegal character, or a Quartz extension. |
 | `JobSignatureError` | Configured `args`/`kwargs` can't bind to the function signature, a `gp_context`/`worker_init` contract is broken, or a process job's args aren't picklable. |
 | `ReservedKeyError` | A job's `kwargs` contains `gp_globals` or `gp_context`. |
+| `MaxRunsError` | A job's `max_runs` is not a positive integer — a bool, a float (even `1.0`), or `<= 0`. |
 | `ConfigError` | Any other config-loading failure, including wrapped gpconfig errors. |
 
 ```python

@@ -2,7 +2,8 @@
 
 This page walks through the runnable demo bundled in the repo's `examples/` directory.
 It exercises every major feature — arguments, `job_globals` injection, `worker_init` in
-both thread and process pools, executor override, and a disabled job — end to end.
+both thread and process pools, executor override, `max_runs` (capped executions), and a
+disabled job — end to end.
 
 If you have the repo cloned, you can follow along directly; the demo uses only `print()`
 for output, so it needs no external services.
@@ -34,7 +35,7 @@ Each job demonstrates one feature:
 
 | Job / file | Feature | Notes |
 | --- | --- | --- |
-| `hello` | positional + keyword args | `greet("gpscheduler", greeting="Hi")` |
+| `hello` | positional + keyword args, `max_runs` | `greet("gpscheduler", greeting="Hi")`, capped at 10 runs |
 | `cleanup` | `job_globals` → `gp_globals` injection | reads `work_dir` from injected globals |
 | `ping_db` | `worker_init` + `gp_context`, **thread** | one DB handler reused across runs |
 | `compute_stats` | `worker_init` + `gp_context`, **process** | heavy object built inside the worker, never pickled |
@@ -80,10 +81,10 @@ Expected `list-jobs` output (four enabled jobs):
 
 ```
 4 enabled job(s):
-  - hello: next run 2026-07-12 10:00:02+08:00
-  - ping_db: next run 2026-07-12 10:00:05+08:00
-  - compute_stats: next run 2026-07-12 10:00:10+08:00
-  - cleanup: next run 2026-07-13 03:30:00+08:00
+  - hello: next run 2026-07-12 10:00:02+08:00 (max_runs: 10)
+  - ping_db: next run 2026-07-12 10:00:05+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-12 10:00:10+08:00 (max_runs: unlimited)
+  - cleanup: next run 2026-07-13 03:30:00+08:00 (max_runs: unlimited)
 ```
 
 `maintenance` is `enable: false`, so it is validated but not listed.
@@ -109,10 +110,19 @@ cron: "*/2 * * * * *"        # 6-segment: every 2 seconds
 args: ["gpscheduler"]        # positional -> name
 kwargs:
   greeting: "Hi"             # keyword -> greeting
+max_runs: 10                 # caps at 10 executions, then auto-removes the job
 ```
 
 The 6-segment cron (`second minute hour day month dow`) fires every 2 seconds. `args`
 maps to the positional `name`; `kwargs` maps to the keyword-only `greeting`.
+
+`max_runs: 10` limits this job to 10 executions. Each invocation counts (whether the
+function returns normally or raises). After the 10th run the scheduler removes the job
+and logs `job 'hello' reached max_runs=10, removing`. At a 2-second interval that takes
+about 20 seconds, after which `hello` stops appearing in the output while the other jobs
+keep running. Omit `max_runs` (or set it to `null`) for unlimited executions — the
+default, identical to classic cron. See [Configuration](configuration.md) for the full
+`max_runs` reference.
 
 ### 2. `cleanup` — injecting `job_globals`
 

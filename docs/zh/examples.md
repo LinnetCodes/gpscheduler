@@ -1,7 +1,8 @@
 # 使用样例
 
 本页走读仓库 `examples/` 目录中附带的可运行 demo。它端到端地演练了每个主要特性 —— 参数、
-`job_globals` 注入、在线程池和进程池中的 `worker_init`、executor 覆盖，以及一个禁用的 job。
+`job_globals` 注入、在线程池和进程池中的 `worker_init`、executor 覆盖、`max_runs`（限定执行次数），
+以及一个禁用的 job。
 
 如果你克隆了仓库，可以直接跟着做；demo 只用 `print()` 输出，不需要任何外部服务。
 
@@ -32,7 +33,7 @@ examples/
 
 | job / 文件 | 特性 | 说明 |
 | --- | --- | --- |
-| `hello` | 位置 + 关键字参数 | `greet("gpscheduler", greeting="Hi")` |
+| `hello` | 位置 + 关键字参数，`max_runs` | `greet("gpscheduler", greeting="Hi")`，限定执行 10 次 |
 | `cleanup` | `job_globals` → `gp_globals` 注入 | 从注入的 globals 读 `work_dir` |
 | `ping_db` | `worker_init` + `gp_context`，**线程** | 一个 DB handler 跨多次运行复用 |
 | `compute_stats` | `worker_init` + `gp_context`，**进程** | 重对象在 worker 内部构建，从不 pickle |
@@ -78,10 +79,10 @@ gpscheduler run --config configs
 
 ```
 4 enabled job(s):
-  - hello: next run 2026-07-12 10:00:02+08:00
-  - ping_db: next run 2026-07-12 10:00:05+08:00
-  - compute_stats: next run 2026-07-12 10:00:10+08:00
-  - cleanup: next run 2026-07-13 03:30:00+08:00
+  - hello: next run 2026-07-12 10:00:02+08:00 (max_runs: 10)
+  - ping_db: next run 2026-07-12 10:00:05+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-12 10:00:10+08:00 (max_runs: unlimited)
+  - cleanup: next run 2026-07-13 03:30:00+08:00 (max_runs: unlimited)
 ```
 
 `maintenance` 是 `enable: false`，所以它被校验但不出现在列表中。
@@ -107,10 +108,17 @@ cron: "*/2 * * * * *"        # 6 段式：每 2 秒
 args: ["gpscheduler"]        # 位置 -> name
 kwargs:
   greeting: "Hi"             # 关键字 -> greeting
+max_runs: 10                 # 限定执行 10 次后自动移除该 job
 ```
 
 6 段 cron（`second minute hour day month dow`）每 2 秒触发一次。`args` 映射到位置参数 `name`；
 `kwargs` 映射到仅关键字参数 `greeting`。
+
+`max_runs: 10` 把此 job 限定为最多执行 10 次。每次调用都会计数（无论函数正常返回还是抛异常）。
+第 10 次运行后，调度器移除该 job 并记录 `job 'hello' reached max_runs=10, removing`。以 2 秒间隔
+计算大约需要 20 秒，之后 `hello` 不再出现在输出中，而其它 job 继续运行。省略 `max_runs`（或设为
+`null`）则表示无限次执行——这是默认行为，与经典 cron 一致。完整的 `max_runs`
+参考见[配置](configuration.md)页面。
 
 ### 2. `cleanup` —— 注入 `job_globals`
 
