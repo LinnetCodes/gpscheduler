@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, ClassVar, Literal
 
 from gpconfig import GPConfig, GPConfigManager
+from pydantic import field_validator
 
 
 class GPSchedulerConfig(GPConfig):
@@ -39,7 +40,33 @@ class GPJobConfig(GPConfig):
     executor: Literal["thread", "process"] | None = None
     enable: bool = True
     worker_init: str | None = None  # optional dot-path to a @worker_init function
-    max_runs: int | None = None  # optional cap on executions; None = unlimited
+    # Optional cap on executions; None = unlimited. bool/float are rejected at
+    # the pydantic boundary (ADR-0016): ``True``->1 / ``1.0``->1 would otherwise
+    # be silently coerced before the loader ever sees them, so the boundary
+    # validator catches them here. The <=0 range check is deferred to the loader,
+    # which can attach the config-file source prefix to the error message.
+    max_runs: int | None = None
+
+    @field_validator("max_runs", mode="before")
+    @classmethod
+    def _reject_non_int_max_runs(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        # Imported lazily to avoid a circular import (gpscheduler.exceptions
+        # does not import config, but keep the boundary clean).
+        from gpscheduler.exceptions import MaxRunsError
+
+        # bool FIRST: isinstance(True, int) is True, so it would otherwise pass
+        # through the int check below.
+        if isinstance(value, bool):
+            raise MaxRunsError(
+                f"max_runs must be a positive integer, got bool {value!r}"
+            )
+        if not isinstance(value, int):
+            raise MaxRunsError(
+                f"max_runs must be a positive integer, got {type(value).__name__} {value!r}"
+            )
+        return value
 
 
 # Self-register so GPConfigManager.get_config auto-detects by cfg_class_name.

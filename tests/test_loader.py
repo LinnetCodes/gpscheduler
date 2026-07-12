@@ -13,6 +13,7 @@ from gpscheduler.context import _reset_cache_for_test, worker_init
 from gpscheduler.exceptions import (
     CronExpressionError,
     JobSignatureError,
+    MaxRunsError,
     NotScheduledError,
     NotWorkerInitError,
     ReservedKeyError,
@@ -67,7 +68,13 @@ class FakeManager:
         # path like "jobs.cleanup"
         parts = path.split(".")
         if len(parts) == 2 and parts[0] == "jobs":
-            return self._jobs[parts[1]]
+            cfg = self._jobs[parts[1]]
+            # Mirror GPConfigManager, which stamps name (file stem) and
+            # cfg_file_path onto every loaded config. In-memory test configs
+            # keep the default cfg_file_path (Path() == "."), so loader._src
+            # treats it as absent and falls back to "job '<name>'".
+            cfg.name = parts[1]
+            return cfg
         raise KeyError(path)
 
 
@@ -373,4 +380,92 @@ def test_load_worker_init_bad_signature_raises_at_load() -> None:
     func_dot = f"{_job_with_context.__module__}.{_job_with_context.__qualname__}"
     mgr = FakeManager({"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot)})
     with pytest.raises(JobSignatureError):
+        _load(mgr, reg, _sched_config())
+
+
+# --- max_runs validation (ADR-0016) -----------------------------------------
+
+
+def test_loaded_job_carries_max_runs_none_by_default() -> None:
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])}
+    )
+    jobs = _load(mgr, reg, _sched_config())
+    assert jobs[0].max_runs is None
+
+
+def test_loaded_job_carries_max_runs_when_set() -> None:
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=5)}
+    )
+    jobs = _load(mgr, reg, _sched_config())
+    assert jobs[0].max_runs == 5
+
+
+def test_max_runs_rejects_bool() -> None:
+    """bool is a subclass of int; max_runs=True must be rejected to avoid confusion.
+
+    Rejection happens at the pydantic config boundary (bool/float would otherwise
+    be silently coerced to int before the loader ever sees them), so the GPJobConfig
+    construction itself must raise.
+    """
+    with pytest.raises(MaxRunsError):
+        GPJobConfig(  # type: ignore[arg-type]
+            func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=True
+        )
+
+
+def test_max_runs_rejects_float() -> None:
+    """Even losslessly-convertible floats like 1.0 are rejected (avoid semantic confusion).
+
+    Rejection happens at the pydantic config boundary; the loader never sees floats.
+    """
+    with pytest.raises(MaxRunsError):
+        GPJobConfig(  # type: ignore[arg-type]
+            func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=1.0
+        )
+
+
+def test_max_runs_rejects_zero() -> None:
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=0)}
+    )
+    with pytest.raises(MaxRunsError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_max_runs_rejects_negative() -> None:
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=-3)}
+    )
+    with pytest.raises(MaxRunsError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_max_runs_disabled_job_still_validated() -> None:
+    """Fail-Early: disabled jobs are still validated (consistency with other checks)."""
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {
+            "x": GPJobConfig(
+                func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=0, enable=False
+            )
+        }
+    )
+    with pytest.raises(MaxRunsError):
+        _load(mgr, reg, _sched_config())
+
+
+def test_max_runs_error_message_includes_config_file_path() -> None:
+    """Error message must carry the _src() file-path prefix (loader consistency)."""
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], max_runs=0)}
+    )
+    # FakeManager configs don't have cfg_file_path set, so src falls back to "job 'x'".
+    with pytest.raises(MaxRunsError, match="job 'x'"):
         _load(mgr, reg, _sched_config())

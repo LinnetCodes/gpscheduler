@@ -14,6 +14,7 @@ import inspect
 import pickle
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from apscheduler.triggers.cron import CronTrigger
@@ -24,6 +25,7 @@ from gpscheduler.cron import parse_cron
 from gpscheduler.exceptions import (
     CronExpressionError,
     JobSignatureError,
+    MaxRunsError,
     NotScheduledError,
     NotWorkerInitError,
     ReservedKeyError,
@@ -51,6 +53,7 @@ class LoadedJob:
     kwargs: dict[str, Any]
     executor: str
     enable: bool = True
+    max_runs: int | None = None  # None = unlimited (ADR-0016)
 
 
 def _default_import_packages(packages: list[str]) -> None:
@@ -72,9 +75,13 @@ def _src(job_cfg: Any) -> str:
     which file is wrong — e.g. ``"jobs/compute_stats.yaml: invalid cron ..."``.
     Falls back to the job name if the path is absent (defensive; the loader
     always loads via the manager, which sets it).
+
+    ``GPConfig`` defaults ``cfg_file_path`` to ``Path()`` (i.e. ``"."``) for
+    in-memory / test-constructed configs, which is truthy but meaningless —
+    treat it as absent so the fallback fires.
     """
     path = getattr(job_cfg, "cfg_file_path", None)
-    if path:
+    if path is not None and Path(path) != Path():
         return f"{path}"
     name = getattr(job_cfg, "name", "<unknown>")
     return f"job {name!r}"
@@ -94,6 +101,30 @@ def _preflight_pickle(
             f"{src}: process-executor job {getattr(func, '__qualname__', func)!r} has "
             f"non-picklable args/kwargs: {e}"
         ) from e
+
+
+def _validate_max_runs(value: Any, src: str) -> int | None:
+    """Validate a job's max_runs config value (ADR-0016).
+
+    Returns the validated positive int, or None (unlimited). Raises
+    MaxRunsError on: bool (checked first because bool is an int subclass),
+    non-int (rejects float even if losslessly convertible), or <= 0.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise MaxRunsError(
+            f"{src}: max_runs must be a positive integer, got bool {value!r}"
+        )
+    if not isinstance(value, int):
+        raise MaxRunsError(
+            f"{src}: max_runs must be a positive integer, got {type(value).__name__} {value!r}"
+        )
+    if value <= 0:
+        raise MaxRunsError(
+            f"{src}: max_runs must be a positive integer, got {value}"
+        )
+    return value
 
 
 def load_jobs(
@@ -155,6 +186,9 @@ def _validate_one(
 
     # (a) Registry lookup (ADR-0004 strict).
     func = _lookup(registry, job_cfg.func, src)
+
+    # (a2) max_runs validation (ADR-0016).
+    max_runs = _validate_max_runs(job_cfg.max_runs, src)
 
     # (b) Cron parse (ADR-0007). cron_parser is generic (no file context), so
     # catch and re-raise with the source path attached.
@@ -239,6 +273,7 @@ def _validate_one(
         kwargs=effective_kwargs,
         executor=executor,
         enable=job_cfg.enable,
+        max_runs=max_runs,
     )
 
 
