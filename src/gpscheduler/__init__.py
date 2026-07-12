@@ -14,6 +14,7 @@ from gpscheduler.exceptions import (
     DecoratorError,
     GPSchedulerError,
     JobSignatureError,
+    MaxRunsError,
     NotScheduledError,
     NotWorkerInitError,
     RegistryError,
@@ -44,6 +45,7 @@ __all__ = [
     "CronExpressionError",
     "JobSignatureError",
     "ReservedKeyError",
+    "MaxRunsError",
     "WorkerInitError",
     "NotWorkerInitError",
 ]

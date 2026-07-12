@@ -62,3 +62,7 @@ class JobSignatureError(ConfigError):
 
 class ReservedKeyError(ConfigError):
     """A job's kwargs used the reserved key ``gp_globals`` (ADR-0006)."""
+
+
+class MaxRunsError(ConfigError):
+    """A job's ``max_runs`` config value is invalid (not a positive int)."""

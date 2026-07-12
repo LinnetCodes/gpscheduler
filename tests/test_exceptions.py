@@ -25,6 +25,7 @@ def test_config_layer() -> None:
         exc.CronExpressionError,
         exc.JobSignatureError,
         exc.ReservedKeyError,
+        exc.MaxRunsError,
     ):
         assert issubclass(leaf, exc.ConfigError)
     assert issubclass(exc.ConfigError, exc.GPSchedulerError)
@@ -46,6 +47,7 @@ def test_all_exported_from_package() -> None:
         "CronExpressionError",
         "JobSignatureError",
         "ReservedKeyError",
+        "MaxRunsError",
         "WorkerInitError",
         "NotWorkerInitError",
     ]:
