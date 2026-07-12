@@ -85,6 +85,7 @@ job id.
 | `executor` | `"thread" \| "process"` | *(scheduler default)* | Per-job executor override. |
 | `enable` | `bool` | `True` | `False` = validate but don't register. See [enable semantics](#enable-semantics). |
 | `worker_init` | `str` | *(none)* | Dotted path to a `@worker_init` function. See [API → worker_init](api.md#worker_init). |
+| `max_runs` | `int \| null` | `null` (unlimited) | Optional. Caps the number of times the job executes before being automatically removed from the scheduler. Must be a positive integer. See below. |
 
 **`func` is the decorator's registry key** — exactly `"{function.__module__}.{function.__qualname__}"`.
 For a module-level function `greet` in `myjobs/hello.py` (importable as `myjobs.hello`),
@@ -156,6 +157,30 @@ only when you flip `enable` back to `true`.
 
 ```yaml
 enable: false   # validated, but excluded from list-jobs and run
+```
+
+## `max_runs` — limiting executions
+
+Set `max_runs: N` to make a job run at most `N` times and then stop. Each actual
+invocation counts (whether the function returns normally or raises). After the
+`N`-th execution the scheduler removes the job and logs an info message.
+
+- **Omit the field (or set `null`)** for unlimited executions — the default,
+  identical to classic cron behavior.
+- **The counter is in-memory and process-local.** If the process restarts,
+  counting resets; the job runs up to `N` times again in the new process.
+- Runs skipped due to `max_instances=1` (the default) when a previous execution
+  is still in progress do **not** count.
+- Only positive integers are accepted. Booleans (`true`) and floats (`1.0`)
+  are rejected at load time with a `MaxRunsError`, even if they would convert
+  losslessly, to avoid ambiguity.
+
+```yaml
+# jobs/demo.yaml
+cfg_class_name: GPJobConfig
+func: mypkg.jobs.demo
+cron: "* * * * *"
+max_runs: 5   # runs 5 times, then is removed
 ```
 
 ## Cron format

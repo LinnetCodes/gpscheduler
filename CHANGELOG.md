@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expensive objects (DB handlers, network clients) are built once, not per run.
   Config flows through `gp_globals`; heavy objects flow through `gp_context`.
   New exceptions: `WorkerInitError`, `NotWorkerInitError`. See ADR-0015.
+- Per-job `max_runs` config field: optionally cap how many times a job executes
+  before automatic removal. In-memory, process-local counter; `null` (default)
+  means unlimited. Invalid values (bool, float, <= 0) raise `MaxRunsError` at
+  load time. `list-jobs` displays the configured value (`max_runs: N` or
+  `max_runs: unlimited`). See ADR-0016.
 
 ### Fixed
 - `gpscheduler list-jobs` no longer crashes with `AttributeError: 'apscheduler.job.Job'

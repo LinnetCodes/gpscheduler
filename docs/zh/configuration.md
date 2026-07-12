@@ -78,6 +78,7 @@ job_globals:
 | `executor` | `"thread" \| "process"` | *(调度器默认)* | 单个 job 的 executor 覆盖。 |
 | `enable` | `bool` | `True` | `False` = 校验但不注册。见 [enable 语义](#enable-语义)。 |
 | `worker_init` | `str` | *(无)* | 指向 `@worker_init` 函数的 dotted path。见 [API → worker_init](api.md#worker_init)。 |
+| `max_runs` | `int \| null` | `null`（无限） | 可选。限制任务在被自动移出调度器前最多执行的次数。必须是正整数。见下文。 |
 
 **`func` 就是装饰器的注册表键** —— 恰好是 `"{function.__module__}.{function.__qualname__}"`。对
 `myjobs/hello.py`（可导入为 `myjobs.hello`）中的模块级函数 `greet`，就是
@@ -146,6 +147,26 @@ def cleanup(retention_days: int, *, gp_globals: dict) -> None:
 
 ```yaml
 enable: false   # 被校验，但从 list-jobs 和 run 中排除
+```
+
+## `max_runs` —— 限制执行次数
+
+设置 `max_runs: N` 可让任务最多执行 `N` 次后自动停止。每次实际调用都会计数（无论函数
+正常返回还是抛出异常）。第 `N` 次执行后，调度器会移除该任务并记录一条 info 日志。
+
+- **省略该字段（或设为 `null`）**表示无限次执行——这是默认行为，与经典 cron 一致。
+- **计数器存在于内存中，仅在当前进程有效。** 进程重启后计数归零，任务会在新进程里
+  重新最多执行 `N` 次。
+- 因 `max_instances=1`（默认值）导致上一次执行未完成而跳过的触发，**不计入**次数。
+- 只接受正整数。布尔值（`true`）和浮点数（`1.0`）即使能无损转换也会在加载时被
+  `MaxRunsError` 拒绝，以避免歧义。
+
+```yaml
+# jobs/demo.yaml
+cfg_class_name: GPJobConfig
+func: mypkg.jobs.demo
+cron: "* * * * *"
+max_runs: 5   # 执行 5 次后被移除
 ```
 
 ## cron 格式
