@@ -84,3 +84,13 @@ def test_job_config_worker_init_defaults_none() -> None:
 def test_job_config_worker_init_accepts_dotpath() -> None:
     cfg = GPJobConfig(func="pkg.f", cron="* * * * *", worker_init="pkg.init_db")
     assert cfg.worker_init == "pkg.init_db"
+
+
+def test_job_config_max_runs_defaults_none() -> None:
+    cfg = GPJobConfig(func="pkg.f", cron="* * * * *")
+    assert cfg.max_runs is None
+
+
+def test_job_config_max_runs_accepts_positive_int() -> None:
+    cfg = GPJobConfig(func="pkg.f", cron="* * * * *", max_runs=5)
+    assert cfg.max_runs == 5

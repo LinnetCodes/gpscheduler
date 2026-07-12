@@ -39,6 +39,7 @@ class GPJobConfig(GPConfig):
     executor: Literal["thread", "process"] | None = None
     enable: bool = True
     worker_init: str | None = None  # optional dot-path to a @worker_init function
+    max_runs: int | None = None  # optional cap on executions; None = unlimited
 
 
 # Self-register so GPConfigManager.get_config auto-detects by cfg_class_name.
