@@ -21,3 +21,7 @@ args:
 # NOTE: never put `gp_globals` here — it is a reserved key (ReservedKeyError).
 kwargs:
   greeting: "Hi"
+
+# Cap this job at 10 executions, then auto-remove it (ADR-0016). At the cron
+# interval above (every 2s) this runs for ~20s then stops. Omit for unlimited.
+max_runs: 10
