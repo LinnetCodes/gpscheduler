@@ -53,11 +53,14 @@ Same `--config` and `--project` options and defaults as `run`.
 
 ```
 4 enabled job(s):
-  - hello: next run 2026-07-12 10:00:02+08:00
-  - cleanup: next run 2026-07-13 03:30:00+08:00
-  - ping_db: next run 2026-07-12 10:00:05+08:00
-  - compute_stats: next run 2026-07-12 10:00:10+08:00
+  - hello: next run 2026-07-12 10:00:02+08:00 (max_runs: 10)
+  - cleanup: next run 2026-07-13 03:30:00+08:00 (max_runs: unlimited)
+  - ping_db: next run 2026-07-12 10:00:05+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-12 10:00:10+08:00 (max_runs: unlimited)
 ```
+
+Each line shows the job's `max_runs` setting — a positive integer, or `unlimited` when
+the job has no cap (the default). See [Configuration → max_runs](configuration.md).
 
 If there are no enabled jobs, it prints `No enabled jobs.` Because `list-jobs` loads an
 **unstarted** scheduler, next-fire times are computed directly from each job's trigger;
