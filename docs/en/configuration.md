@@ -156,7 +156,7 @@ This is Fail-Early in action: you won't discover your disabled job's config was 
 only when you flip `enable` back to `true`.
 
 ```yaml
-enable: false   # validated, but excluded from list-jobs and run
+enable: false   # validated, but not registered (reported in a `list-jobs` summary line)
 ```
 
 ## `max_runs` — limiting executions

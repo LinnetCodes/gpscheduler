@@ -291,6 +291,7 @@ Per-job configuration. Hydrated from **one** file: `jobs/<name>.yaml`. The filen
 | `executor` | `"thread" \| "process" \| None` | `None` | Per-job executor override. `None` falls back to the scheduler default. |
 | `enable` | `bool` | `True` | If `False`, the job is validated but not registered. |
 | `worker_init` | `str \| None` | `None` | Dotted path to a `@worker_init` function. |
+| `max_runs` | `int \| None` | `None` | Optional cap on executions before the job is automatically removed (`None` = unlimited). Must be a positive integer. See [Configuration → max_runs](configuration.md#max_runs--limiting-executions). |
 
 ### Reserved keys
 

@@ -146,7 +146,7 @@ def cleanup(retention_days: int, *, gp_globals: dict) -> None:
 这就是 Fail-Early 在起作用：你不会等到把 `enable` 翻回 `true` 时才发现配置一直是坏的。
 
 ```yaml
-enable: false   # 被校验，但从 list-jobs 和 run 中排除
+enable: false   # 被校验，但不注册（会在 `list-jobs` 的摘要行中报告）
 ```
 
 ## `max_runs` —— 限制执行次数

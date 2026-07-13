@@ -15,6 +15,10 @@ arguments, and exposes a decorator to mark schedulable functions.
 - **Package-agnostic** — point a job at any importable function in any installed
   package, located by dotted path. The `@scheduled` decorator marks functions as
   schedulable directly in their source. See [API reference](api.md#scheduled).
+- **Two decorators** — `@scheduled` marks a function as schedulable; `@worker_init`
+  builds an expensive object (DB connection, network client, …) once and reuses it
+  across a job's runs. See [API reference → scheduled](api.md#scheduled) and
+  [API reference → worker_init](api.md#worker_init).
 - **Thread and process executors** — each job picks its own pool. Threads for
   I/O-bound work, processes for CPU-bound or isolated work. See
   [Performance](performance.md).

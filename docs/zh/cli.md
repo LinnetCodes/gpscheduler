@@ -51,9 +51,9 @@ gpscheduler list-jobs [--config PATH] [--project NAME]
 ```
 4 enabled job(s):
   - cleanup: next run 2026-07-14 03:30:00+08:00 (max_runs: unlimited)
-  - compute_stats: next run 2026-07-13 21:06:40+08:00 (max_runs: unlimited)
-  - hello: next run 2026-07-13 21:06:34+08:00 (max_runs: 10)
-  - ping_db: next run 2026-07-13 21:06:35+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-14 00:06:10+08:00 (max_runs: unlimited)
+  - hello: next run 2026-07-14 00:06:02+08:00 (max_runs: 10)
+  - ping_db: next run 2026-07-14 00:06:05+08:00 (max_runs: unlimited)
 1 disabled job(s) validated but not registered: maintenance
 ```
 

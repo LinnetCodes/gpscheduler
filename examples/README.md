@@ -108,7 +108,9 @@ gpscheduler list-jobs --config configs
 
 You should see the **four** enabled jobs (`hello`, `cleanup`, `ping_db`,
 `compute_stats`) with their next-run times. `maintenance` is `enable: false` and is
-validated but deliberately omitted — exactly the ADR-0005 behavior.
+validated but not registered — it does not appear in the enabled list, but `list-jobs`
+prints a trailing summary line naming it so you know it was checked (exactly the
+ADR-0005 behavior).
 
 ### Live run: start the scheduler
 

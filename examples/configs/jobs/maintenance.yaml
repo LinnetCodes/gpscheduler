@@ -3,7 +3,8 @@
 # A disabled job is STILL fully validated — Registry lookup of `func`, cron
 # parse, and signature bind all run. But the loader excludes it from the
 # returned job list, so APScheduler never registers it. `gpscheduler list-jobs`
-# will NOT show it. Flip `enable: true` to activate it.
+# omits it from the enabled list but prints a trailing summary line naming it,
+# so you know it was checked. Flip `enable: true` to activate it.
 #
 # This Fail-Early behavior catches config rot: a typo here fails at load time,
 # not the day someone re-enables the job.

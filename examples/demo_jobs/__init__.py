@@ -5,9 +5,10 @@ gpscheduler imports every package named in ``scheduler.yaml:packages`` via
 its submodules, so we import the job modules here to ensure the ``@scheduled``
 and ``@worker_init`` side-effects (Registry registration) fire.
 
-Run from the repo root so ``demo_jobs`` is importable:
+Run from the ``examples/`` directory so ``demo_jobs`` is importable (the CLI does
+not add the current directory to ``sys.path``, so set ``PYTHONPATH=.`` as well):
 
-    python -m gpscheduler ...   # with cwd = gpscheduler/  (examples/ is on sys.path)
+    PYTHONPATH=. gpscheduler run --config configs   # with cwd = examples/
 
 Each ``func`` / ``worker_init`` value in ``configs/jobs/*.yaml`` must equal the
 decorated function's registry key, which is ``f"{__module__}.{__qualname__}"``.

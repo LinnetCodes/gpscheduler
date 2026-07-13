@@ -263,6 +263,7 @@ id。同样 `extra="forbid"`。
 | `executor` | `"thread" \| "process" \| None` | `None` | 单个 job 的 executor 覆盖。`None` 回落到调度器默认值。 |
 | `enable` | `bool` | `True` | 为 `False` 时，校验但不注册。 |
 | `worker_init` | `str \| None` | `None` | 指向 `@worker_init` 函数的 dotted path。 |
+| `max_runs` | `int \| None` | `None` | 可选。限制任务在被自动移除前最多执行的次数（`None` = 无限）。必须是正整数。见[配置 → max_runs](configuration.md#max_runs--限制执行次数)。 |
 
 ### 保留键
 

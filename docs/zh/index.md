@@ -12,6 +12,9 @@ GPScheduler（通用调度器，General-Purpose Scheduler）是一个 cron 风�
 - **不绑定特定包** —— 任务可指向任意已安装包中可导入的函数，通过 dotted path 定位。
   `@scheduled` 装饰器可直接在源码中标记可调度函数。见
   [API 参考 → scheduled](api.md#scheduled)。
+- **两个装饰器** —— `@scheduled` 标记函数为可调度；`@worker_init` 构建一次成本很高的对象
+  （数据库连接、网络客户端……），并在该 job 的多次运行中复用。见
+  [API 参考 → scheduled](api.md#scheduled) 与 [API 参考 → worker_init](api.md#worker_init)。
 - **线程与进程两种 executor** —— 每个 job 各自选择线程池或进程池。I/O 密集型走线程，
   CPU 密集型或需要隔离的走进程。见[性能](performance.md)。
 - **按 job 复用的初始化器** —— `@worker_init` 装饰器构建一次成本很高的对象（数据库连接、

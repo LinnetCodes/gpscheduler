@@ -245,8 +245,10 @@ kwargs: {}
 enable: false                 # validated, not registered
 ```
 
-`enable: false` excludes the job from `list-jobs` and `run`, but its config is still
-fully validated at load. Flip `enable: true` (or remove the line) and it appears.
+`enable: false` excludes the job from `run` and from the enabled list in `list-jobs`,
+but its config is still fully validated at load — and `list-jobs` prints a trailing
+summary line naming it, so you know it was checked. Flip `enable: true` (or remove the
+line) and it appears in the enabled list.
 
 ## Things to try
 

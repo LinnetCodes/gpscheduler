@@ -17,7 +17,7 @@ func: "demo_jobs.compute.compute_stats"
 # The worker_init function — built once per worker process, reused after.
 worker_init: "demo_jobs.compute.init_stats_client"
 
-# Every 10seconds.
+# Every 10 seconds.
 cron: "*/10 * * * * *"
 
 # Positional: dataset name. -> compute_stats("metrics").

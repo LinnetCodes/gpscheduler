@@ -234,8 +234,9 @@ kwargs: {}
 enable: false                 # 校验，但不注册
 ```
 
-`enable: false` 把该 job 从 `list-jobs` 和 `run` 中排除，但它的配置仍会在加载时被完整校验。把
-`enable` 翻成 `true`（或删掉这一行）它就会出现。
+`enable: false` 把该 job 从 `run` 和 `list-jobs` 的启用列表中排除，但它的配置仍会在加载时被
+完整校验 —— 且 `list-jobs` 会在末尾打印一行摘要点名它，让你知道它被校验过。把 `enable` 翻成
+`true`（或删掉这一行）它就会出现在启用列表中。
 
 ## 可以尝试的事情
 
