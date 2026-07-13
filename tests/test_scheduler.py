@@ -13,7 +13,7 @@ from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED  # noqa: F401
 import gpscheduler  # noqa: F401  (registers config classes)
 from gpscheduler import GPScheduler, GPSchedulerConfig, create_scheduler, run_scheduler
 from gpscheduler.decorator import scheduled
-from gpscheduler.exceptions import ConfigError
+from gpscheduler.exceptions import ConfigError, InvalidTimezoneError
 from gpscheduler.scheduler import _process_init, bridge_apscheduler_logging
 
 
@@ -244,6 +244,25 @@ def test_gpconfig_errors_translated_to_config_error(tmp_path: Path) -> None:
     # Point at a non-existent folder -> gpconfig raises ConfigFolderError (a GPConfigError).
     with pytest.raises(ConfigError):
         create_scheduler(cfg_folder=tmp_path / "does-not-exist", project_name="gpscheduler_test")
+
+
+def test_invalid_timezone_translated_to_invalid_timezone_error() -> None:
+    """A bad scheduler.yaml timezone must raise InvalidTimezoneError, not ZoneInfoNotFoundError.
+
+    APScheduler's ``BackgroundScheduler(timezone=tz)`` raises
+    ``ZoneInfoNotFoundError`` for a bogus IANA name. That escapes the GPSchedulerError
+    hierarchy, so ``_build_scheduler`` must translate it at the source.
+    """
+    bad_tz = "Bogus/Nowhere"
+    cfg = GPSchedulerConfig(timezone=bad_tz, max_workers=1)
+    with pytest.raises(InvalidTimezoneError) as exc_info:
+        GPScheduler(cfg)
+    # The bad timezone name must appear in the message.
+    assert bad_tz in str(exc_info.value)
+    # The original error is preserved as __cause__.
+    from zoneinfo import ZoneInfoNotFoundError
+
+    assert isinstance(exc_info.value.__cause__, ZoneInfoNotFoundError)
 
 
 def test_register_jobs_records_max_runs() -> None:

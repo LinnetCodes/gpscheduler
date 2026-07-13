@@ -365,8 +365,10 @@ GPSchedulerError                     # base for everything
 │   └── NotWorkerInitError           # a worker_init dotted path is not a registered @worker_init function
 └── ConfigError                      # configuration problem (wraps gpconfig failures)
     ├── CronExpressionError          # invalid cron expression
+    ├── InvalidTimezoneError         # the configured timezone is not a valid IANA name
     ├── JobSignatureError            # configured args/kwargs can't bind to the signature
     ├── MaxRunsError                 # a job's max_runs is not a positive int (bool/float/<=0)
+    ├── PackageImportError           # a configured packages entry could not be imported
     └── ReservedKeyError             # a job's kwargs used a reserved key (gp_globals/gp_context)
 ```
 
@@ -376,7 +378,9 @@ GPSchedulerError                     # base for everything
 | `NotScheduledError` | A job's `func` dotted path is not in the Registry (not `@scheduled`, or its package wasn't imported). |
 | `NotWorkerInitError` | A job's `worker_init` dotted path is not a registered `@worker_init` function. |
 | `CronExpressionError` | A cron expression has the wrong segment count, an out-of-range field, an illegal character, or a Quartz extension. |
+| `InvalidTimezoneError` | The configured `timezone` is not a valid IANA timezone name. |
 | `JobSignatureError` | Configured `args`/`kwargs` can't bind to the function signature, a `gp_context`/`worker_init` contract is broken, or a process job's args aren't picklable. |
+| `PackageImportError` | A package name in `packages` could not be imported. |
 | `ReservedKeyError` | A job's `kwargs` contains `gp_globals` or `gp_context`. |
 | `MaxRunsError` | A job's `max_runs` is not a positive integer — a bool, a float (even `1.0`), or `<= 0`. |
 | `ConfigError` | Any other config-loading failure, including wrapped gpconfig errors. |

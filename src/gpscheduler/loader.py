@@ -28,6 +28,7 @@ from gpscheduler.exceptions import (
     MaxRunsError,
     NotScheduledError,
     NotWorkerInitError,
+    PackageImportError,
     ReservedKeyError,
 )
 from gpscheduler.registry import Registry
@@ -59,7 +60,13 @@ class LoadedJob:
 def _default_import_packages(packages: list[str]) -> None:
     """Import each top-level package name so @scheduled side-effects fire."""
     for pkg in packages:
-        importlib.import_module(pkg)
+        try:
+            importlib.import_module(pkg)
+        except ModuleNotFoundError as e:
+            raise PackageImportError(
+                f"failed to import configured package {pkg!r} "
+                f"(in scheduler.yaml:packages): {e}"
+            ) from e
 
 
 def _resolve_executor(job_executor: str | None, sched_executor: str) -> str:

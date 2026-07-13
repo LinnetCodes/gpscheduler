@@ -16,9 +16,10 @@ from gpscheduler.exceptions import (
     MaxRunsError,
     NotScheduledError,
     NotWorkerInitError,
+    PackageImportError,
     ReservedKeyError,
 )
-from gpscheduler.loader import LoadedJob, load_jobs
+from gpscheduler.loader import LoadedJob, _default_import_packages, load_jobs
 from gpscheduler.registry import Registry
 from gpscheduler.registry import registry as _global_registry
 
@@ -469,3 +470,22 @@ def test_max_runs_error_message_includes_config_file_path() -> None:
     # FakeManager configs don't have cfg_file_path set, so src falls back to "job 'x'".
     with pytest.raises(MaxRunsError, match="job 'x'"):
         _load(mgr, reg, _sched_config())
+
+
+# --- package import translation ---------------------------------------------
+
+
+def test_default_import_packages_translates_module_not_found_error() -> None:
+    """A bad package entry must raise PackageImportError, not ModuleNotFoundError.
+
+    The public contract says every exception gpscheduler raises is inside the
+    GPSchedulerError hierarchy, so the raw ``ModuleNotFoundError`` from
+    ``importlib.import_module`` must be translated at this boundary.
+    """
+    bad_pkg = "definitely_not_a_real_pkg_xyz"
+    with pytest.raises(PackageImportError) as exc_info:
+        _default_import_packages([bad_pkg])
+    # The failing package name must appear in the message.
+    assert bad_pkg in str(exc_info.value)
+    # The original error is preserved as __cause__.
+    assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)

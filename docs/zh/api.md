@@ -333,8 +333,10 @@ GPSchedulerError                     # 一切的基类
 │   └── NotWorkerInitError           # worker_init dotted path 不是已注册的 @worker_init 函数
 └── ConfigError                      # 配置问题（包装 gpconfig 失败）
     ├── CronExpressionError          # 无效的 cron 表达式
+    ├── InvalidTimezoneError         # 配置的时区不是合法的 IANA 名称
     ├── JobSignatureError            # 配置的 args/kwargs 无法绑定到签名
     ├── MaxRunsError                 # job 的 max_runs 不是正整数（bool/float/<=0）
+    ├── PackageImportError           # 配置的 packages 条目无法导入
     └── ReservedKeyError             # job 的 kwargs 用了保留键（gp_globals/gp_context）
 ```
 
@@ -344,7 +346,9 @@ GPSchedulerError                     # 一切的基类
 | `NotScheduledError` | job 的 `func` dotted path 不在 Registry 中（未被 `@scheduled`，或其包未被导入）。 |
 | `NotWorkerInitError` | job 的 `worker_init` dotted path 不是已注册的 `@worker_init` 函数。 |
 | `CronExpressionError` | cron 表达式段数错误、字段越界、非法字符，或用了 Quartz 扩展。 |
+| `InvalidTimezoneError` | 配置的 `timezone` 不是合法的 IANA 时区名。 |
 | `JobSignatureError` | 配置的 `args`/`kwargs` 无法绑定到函数签名，`gp_context`/`worker_init` 契约破坏，或 process job 的参数不可 pickle。 |
+| `PackageImportError` | `packages` 中的某个包名无法导入。 |
 | `ReservedKeyError` | job 的 `kwargs` 包含 `gp_globals` 或 `gp_context`。 |
 | `MaxRunsError` | job 的 `max_runs` 不是正整数 —— 是 bool、float（即使 `1.0`）或 `<= 0`。 |
 | `ConfigError` | 其它任何配置加载失败，包括被包装的 gpconfig 错误。 |

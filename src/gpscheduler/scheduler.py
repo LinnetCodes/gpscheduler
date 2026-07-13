@@ -15,6 +15,7 @@ import signal
 import threading
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+from zoneinfo import ZoneInfoNotFoundError
 
 import gpclog
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
@@ -26,7 +27,7 @@ from loguru import logger as loguru_logger
 
 from gpscheduler import context
 from gpscheduler.config import GPSchedulerConfig
-from gpscheduler.exceptions import ConfigError
+from gpscheduler.exceptions import ConfigError, InvalidTimezoneError
 from gpscheduler.loader import _default_import_packages, load_jobs
 from gpscheduler.signals import install_shutdown_handler
 
@@ -263,16 +264,22 @@ class GPScheduler(GPConfigurable):
 
     def _build_scheduler(self) -> BackgroundScheduler:
         tz = self.config.timezone or None
-        return BackgroundScheduler(
-            executors={
-                "thread": ThreadPoolExecutor(max_workers=self.config.max_workers),
-                "process": ProcessPoolExecutor(
-                    max_workers=self.config.max_workers,
-                    pool_kwargs={"initializer": self._make_process_initializer()},
-                ),
-            },
-            timezone=tz,
-        )
+        try:
+            return BackgroundScheduler(
+                executors={
+                    "thread": ThreadPoolExecutor(max_workers=self.config.max_workers),
+                    "process": ProcessPoolExecutor(
+                        max_workers=self.config.max_workers,
+                        pool_kwargs={"initializer": self._make_process_initializer()},
+                    ),
+                },
+                timezone=tz,
+            )
+        except ZoneInfoNotFoundError as e:
+            raise InvalidTimezoneError(
+                f"configured timezone {self.config.timezone!r} "
+                f"(in scheduler.yaml:timezone) is not a valid IANA timezone name: {e}"
+            ) from e
 
     def _make_process_initializer(self) -> _ProcessWorkerInitializer:
         """Build a picklable process-pool initializer for this scheduler.

@@ -56,8 +56,16 @@ class CronExpressionError(ConfigError):
     """A cron expression is invalid (ADR-0007)."""
 
 
+class InvalidTimezoneError(ConfigError):
+    """A configured ``timezone`` is not a valid IANA timezone name."""
+
+
 class JobSignatureError(ConfigError):
     """Configured arguments cannot bind to the function signature (ADR-0003)."""
+
+
+class PackageImportError(ConfigError):
+    """A configured ``packages`` entry could not be imported."""
 
 
 class ReservedKeyError(ConfigError):

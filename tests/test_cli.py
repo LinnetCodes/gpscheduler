@@ -107,3 +107,52 @@ def test_list_jobs_shows_unlimited_when_max_runs_absent(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "max_runs: unlimited" in result.output
+
+
+def test_run_with_bad_package_reports_error_and_exits_1(tmp_path: Path) -> None:
+    """End-to-end: a bad packages entry surfaces as `error:` + exit 1, not a traceback.
+
+    The CLI catches only ``GPSchedulerError``, so the loader's translation of
+    ``ModuleNotFoundError`` -> ``PackageImportError`` must reach it as a hierarchy
+    member, producing a clean `error: <message>` line rather than a raw traceback.
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    # Overwrite scheduler.yaml to include a bogus package.
+    (cfg_folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\nconfigured_class_name: GPScheduler\n"
+        "timezone: UTC\nmax_workers: 1\npackages: [definitely_not_a_real_pkg_xyz]\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main, ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "error:" in result.output.lower()
+    # Must not leak a Python traceback.
+    assert "Traceback" not in result.output
+
+
+def test_run_with_bad_timezone_reports_error_and_exits_1(tmp_path: Path) -> None:
+    """End-to-end: a bad timezone surfaces as `error:` + exit 1, not a traceback.
+
+    The bad timezone is consumed inside ``GPScheduler.__init__`` (via
+    ``_build_scheduler``), which is reached before the loader runs. The CLI must
+    still catch it cleanly via ``except GPSchedulerError``.
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    # Overwrite scheduler.yaml with a bogus timezone.
+    (cfg_folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\nconfigured_class_name: GPScheduler\n"
+        "timezone: Bogus/Nowhere\nmax_workers: 1\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main, ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "error:" in result.output.lower()
+    assert "Traceback" not in result.output
