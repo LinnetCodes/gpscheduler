@@ -156,3 +156,38 @@ def test_run_with_bad_timezone_reports_error_and_exits_1(tmp_path: Path) -> None
     assert result.exit_code == 1, result.output
     assert "error:" in result.output.lower()
     assert "Traceback" not in result.output
+
+
+def test_next_run_time_renders_meaningful_string_for_unstarted_job() -> None:
+    """``_next_run_time`` uses ``job.trigger.timezone`` and does not raise on an
+    unstarted scheduler (clarity.01).
+
+    The helper previously reached into APScheduler's private ``_scheduler`` attr
+    via ``getattr(job, "_scheduler", job).timezone``. That refactor replaced it
+    with the public ``job.trigger.timezone``. This test pins the public path:
+    given a job with a known trigger whose ``next_run_time`` is None (the
+    unstarted dry-run case), the helper must return a meaningful next-fire
+    string rather than ``(unscheduled)`` or raising ``AttributeError``.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from apscheduler.triggers.cron import CronTrigger
+
+    from gpscheduler.cli import _next_run_time
+
+    # Build a minimal fake job: unstarted scheduler leaves next_run_time unset.
+    trigger = CronTrigger.from_crontab("* * * * *", timezone=ZoneInfo("UTC"))
+
+    class _FakeJob:
+        next_run_time = None
+        # APScheduler sets ``trigger`` on every real job; mirror that here.
+        # The helper accesses it directly as a public attribute.
+
+    fake = _FakeJob()
+    fake.trigger = trigger  # type: ignore[attr-defined]
+
+    result = _next_run_time(fake)
+    assert result != "(unscheduled)"
+    # Must parse as a real datetime (the str() of an aware datetime).
+    datetime.fromisoformat(result)

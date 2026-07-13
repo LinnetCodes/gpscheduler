@@ -31,7 +31,12 @@ def _next_run_time(job: Any) -> str:
     # Unstarted (dry run): ask the trigger when it would next fire.
     trigger = getattr(job, "trigger", None)
     if trigger is not None:
-        now = datetime.now(tz=getattr(job, "_scheduler", job).timezone or None)
+        # CronTrigger always has a tzinfo ``timezone``; the old
+        # ``getattr(job, "_scheduler", job).timezone`` reached into APScheduler's
+        # private ``_scheduler`` attr, and the ``job.timezone`` fallback was dead
+        # code (APScheduler Job has no ``timezone`` attr). ``now`` must be
+        # timezone-aware for ``get_next_fire_time`` to compute correctly.
+        now = datetime.now(tz=job.trigger.timezone)
         nxt = trigger.get_next_fire_time(None, now)
         if nxt is not None:
             return str(nxt)
