@@ -69,7 +69,7 @@ def _parse_dow_item(item: str) -> set[int]:
         end = _parse_dow_atom(end_s)
         return _expand_posix_range(start, end, step)
 
-    # Step on its own (e.g. ``*/2`` is handled above; ``/n`` is invalid).
+    # ``*/n`` — whole field with a step. (A bare ``/n`` or ``n/m`` is invalid.)
     if item.startswith("*/"):
         n = int(item[2:])
         if n <= 0:
@@ -96,12 +96,21 @@ def _parse_dow_atom(atom: str) -> int:
 
 
 def _expand_posix_range(start: int, end: int, step: int) -> set[int]:
-    """Expand a POSIX dow range, handling wrap-around (e.g. 6-0 -> {6,0})."""
-    start = _normalize_posix_dow_value(start)
-    end = _normalize_posix_dow_value(end)
-    # When start > end (e.g. 6-0), wrap through 7 (Sunday-as-7), then normalize 7 -> 0.
-    raw = range(start, end + 1, step) if start <= end else range(start, end + 8, step)
-    return {_normalize_posix_dow_value(v) for v in raw}
+    """Expand a POSIX dow range, handling wrap-around (e.g. 6-0 -> {6,0}).
+
+    ``start`` and ``end`` are already constrained to 0..7 by ``_parse_dow_atom``
+    (7 = Sunday, the same day as 0). Enumerate the raw 0..7 domain — wrapping
+    through 7 when ``start > end`` — then fold each value via ``% 7`` so that
+    7 collapses to 0 in the output. This makes ``0-7`` and ``1-7`` span the
+    full week (inclusive Sunday endpoints), while ``7-7`` and ``0-0`` are
+    Sunday only.
+    """
+    raw = (
+        range(start, end + 1, step)
+        if start <= end
+        else range(start, end + 8, step)
+    )
+    return {v % 7 for v in raw}
 
 
 def _translate_posix_dow(field: str) -> str:
@@ -120,7 +129,7 @@ def _translate_posix_dow(field: str) -> str:
         posix_values = _parse_dow_field_to_posix_ints(field)
         aps_values = {(p + 6) % 7 for p in posix_values}
         return ",".join(str(v) for v in sorted(aps_values))
-    except (ValueError, KeyError, AttributeError):
+    except (ValueError, KeyError):
         # If parsing fails, return the original field unchanged and let
         # APScheduler's own validation surface a meaningful error.
         return field

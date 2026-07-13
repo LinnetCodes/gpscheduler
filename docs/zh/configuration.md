@@ -193,7 +193,8 @@ GPScheduler 使用**可变 5/6 段**的 cron 表达式。空白分隔的字段�
 
 `day_of_week` 字段遵循 **POSIX / Linux crontab** 编号：**0 = 周日 .. 6 = 周六（7 亦为周日）**。
 支持大小写不敏感的 3 字母缩写（`sun`、`mon`、`tue`、`wed`、`thu`、`fri`、`sat`）及全名
-（`sunday`、`monday`...）。允许环绕范围，如 `6-0`（周六与周日）。这与 `man 5 crontab` 一致，
+（`sunday`、`monday`...）。常见的 Vixie-cron 变体缩写（`tues`、`weds`、`thurs`）也同样接受。
+允许环绕范围，如 `6-0`（周六与周日），或更长的 `5-1`（周五、周六、周日、周一）。这与 `man 5 crontab` 一致，
 因此可把 Linux crontab 行直接粘贴使用。
 
 ### 特殊字符

@@ -209,8 +209,10 @@ separated fields decides the semantics — no flag needed.
 The `day_of_week` field follows **POSIX / Linux crontab** numbering:
 **0 = Sunday .. 6 = Saturday (and 7 is also Sunday)**. Case-insensitive 3-letter
 names (`sun`, `mon`, `tue`, `wed`, `thu`, `fri`, `sat`) and full names
-(`sunday`, `monday`, ...) are supported. Wrap-around ranges like `6-0`
-(Saturday and Sunday) are allowed. This matches `man 5 crontab`, so a line
+(`sunday`, `monday`, ...) are supported. Common Vixie-cron abbreviation
+variants (`tues`, `weds`, `thurs`) are also accepted. Wrap-around ranges
+like `6-0` (Saturday and Sunday), or longer ones like `5-1`
+(Fri+Sat+Sun+Mon), are allowed. This matches `man 5 crontab`, so a line
 copied from a Linux crontab pastes directly.
 
 ### Special characters

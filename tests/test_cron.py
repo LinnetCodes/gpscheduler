@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from apscheduler.triggers.cron import CronTrigger
 
-from gpscheduler.cron import parse_cron
+from gpscheduler.cron import _parse_dow_field_to_posix_ints, parse_cron
 from gpscheduler.exceptions import CronExpressionError
 
 
@@ -20,6 +20,24 @@ def _next_weekday(expr: str) -> int:
     nt = t.get_next_fire_time(None, datetime.now())
     assert nt is not None, f"no next fire time for {expr!r}"
     return nt.weekday()
+
+
+def _seven_fire_weekdays(*triggers: CronTrigger) -> tuple[set[int], ...]:
+    """Sample the next 7 fire times from each trigger; return their weekday sets.
+
+    Each trigger fires daily, so the 7 weekdays should cover the whole week.
+    """
+    now = datetime.now()
+    results: list[set[int]] = []
+    for trig in triggers:
+        days: list[datetime] = []
+        for _ in range(7):
+            prev = days[-1] + timedelta(seconds=1) if days else now
+            nxt = trig.get_next_fire_time(None, prev)
+            assert nxt is not None
+            days.append(nxt)
+        results.append({d.weekday() for d in days})
+    return tuple(results)
 
 
 def test_five_segment_uses_from_crontab() -> None:
@@ -172,3 +190,66 @@ def test_dow_out_of_range_raises() -> None:
 def test_dow_unknown_name_raises() -> None:
     with pytest.raises(CronExpressionError):
         parse_cron("0 0 * * xyz")
+
+
+# ---------------------------------------------------------------------------
+# POSIX wrap-around dow ranges and 0-7 full-week handling.
+#
+# Per Vixie cron / `man 5 crontab`, ranges may wrap past Sunday: `5-1` means
+# Fri+Sat+Sun+Mon. `0-7` and `1-7` both span the full week inclusively because
+# 7 is also Sunday.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field,expected",
+    [
+        # Multi-day wrap-around (was crashing before the fix).
+        ("5-1", {0, 1, 5, 6}),
+        ("4-2", {0, 1, 2, 4, 5, 6}),
+        # 3-1 = Wed..Mon wrapping = full week minus Tue(2).
+        ("3-1", {0, 1, 3, 4, 5, 6}),
+        # Single wrap day (was already correct).
+        ("6-0", {0, 6}),
+        # Full week via inclusive Sunday endpoints.
+        ("0-7", {0, 1, 2, 3, 4, 5, 6}),
+        ("1-7", {0, 1, 2, 3, 4, 5, 6}),
+        ("0-6", {0, 1, 2, 3, 4, 5, 6}),
+        # Sunday-only via either endpoint.
+        ("7-7", {0}),
+        ("0-0", {0}),
+    ],
+)
+def test_parse_dow_field_posix_range_expansion(field: str, expected: set[int]) -> None:
+    assert _parse_dow_field_to_posix_ints(field) == expected
+
+
+@pytest.mark.parametrize(
+    "expr,allowed",
+    [
+        # 5-1: Fri, Sat, Sun, Mon -> weekday() in {4, 5, 6, 0}.
+        ("0 0 * * 5-1", {0, 4, 5, 6}),
+        # 4-2: Thu, Fri, Sat, Sun, Mon, Tue -> weekday() in {3, 4, 5, 6, 0, 1}.
+        ("0 0 * * 4-2", {0, 1, 3, 4, 5, 6}),
+    ],
+)
+def test_parse_cron_posix_wraparound_range_fires_on_expected_days(
+    expr: str, allowed: set[int]
+) -> None:
+    assert _next_weekday(expr) in allowed
+
+
+def test_parse_cron_posix_full_week_0_7_matches_star() -> None:
+    # `0-7` is the full week and must fire every day, like `*`.
+    star = parse_cron("0 0 * * *")
+    full = parse_cron("0 0 * * 0-7")
+    star_weekdays, full_weekdays = _seven_fire_weekdays(star, full)
+    assert star_weekdays == full_weekdays == {0, 1, 2, 3, 4, 5, 6}
+
+
+def test_parse_cron_posix_full_week_1_7_matches_star() -> None:
+    # `1-7` is also the full week (parity with `0-7`).
+    star = parse_cron("0 0 * * *")
+    full = parse_cron("0 0 * * 1-7")
+    star_weekdays, full_weekdays = _seven_fire_weekdays(star, full)
+    assert star_weekdays == full_weekdays == {0, 1, 2, 3, 4, 5, 6}
