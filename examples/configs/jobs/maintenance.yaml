@@ -11,8 +11,8 @@ cfg_class_name: GPJobConfig
 
 func: "demo_jobs.maintenance.rebuild_index"
 
-# Weekly: every Monday at 02:00 local. `0` in the day-of-week field = Monday
-# for CronTrigger.from_crontab (5-segment form).
+# Weekly: every Monday at 02:00 local. `1` in the day-of-week field = Monday
+# under POSIX cron numbering (0=Sun..6=Sat, 7 also = Sun), 5-segment form.
 cron: "0 2 * * 1"
 
 # No args or kwargs: rebuild_index() takes none.

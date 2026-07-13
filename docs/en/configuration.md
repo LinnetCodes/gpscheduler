@@ -199,10 +199,19 @@ separated fields decides the semantics — no flag needed.
 */2 * * * * *      6-segment: every 2 seconds
 */5 * * * * *      6-segment: every 5 seconds
 30 3 * * *         5-segment: daily at 03:30 (standard crontab — paste directly)
-0 2 * * 1          5-segment: every Monday at 02:00 (0 = Monday in the dow field)
+0 2 * * 1          5-segment: every Monday at 02:00 (1 = Monday; POSIX: 0=Sun..6=Sat, 7 also = Sun)
 0 0 1 * *          5-segment: at 00:00 on the first day of every month
 0 */6 * * *        5-segment: every 6 hours on the hour
 ```
+
+### Day-of-week numbering (POSIX)
+
+The `day_of_week` field follows **POSIX / Linux crontab** numbering:
+**0 = Sunday .. 6 = Saturday (and 7 is also Sunday)**. Case-insensitive 3-letter
+names (`sun`, `mon`, `tue`, `wed`, `thu`, `fri`, `sat`) and full names
+(`sunday`, `monday`, ...) are supported. Wrap-around ranges like `6-0`
+(Saturday and Sunday) are allowed. This matches `man 5 crontab`, so a line
+copied from a Linux crontab pastes directly.
 
 ### Special characters
 
