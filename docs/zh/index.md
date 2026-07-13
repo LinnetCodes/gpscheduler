@@ -74,6 +74,14 @@ pip install -e ".[dev]"
      greeting: "Hi"
    ```
 
+   配置文件夹根下还需要一个 `global_env.yaml` —— 底层 [gpconfig](https://github.com/LinnetCodes/gpconfig)
+   加载器必需。填一个空的 `{}` 即可（`global_env.yaml` 的用途见 [gpconfig 仓库](https://github.com/LinnetCodes/gpconfig)）：
+
+   ```yaml
+   # configs/global_env.yaml
+   {}
+   ```
+
 4. 运行：
 
    ```bash

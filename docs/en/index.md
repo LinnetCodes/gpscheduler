@@ -79,6 +79,15 @@ pip install -e ".[dev]"
      greeting: "Hi"
    ```
 
+   The config folder also needs a `global_env.yaml` at its root — required by the
+   underlying [gpconfig](https://github.com/LinnetCodes/gpconfig) loader. An empty
+   `{}` is fine:
+
+   ```yaml
+   # configs/global_env.yaml
+   {}
+   ```
+
 4. Run it:
 
    ```bash
