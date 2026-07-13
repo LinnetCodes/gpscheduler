@@ -106,9 +106,9 @@ $env:PYTHONPATH = "."; gpscheduler list-jobs --config configs
 gpscheduler list-jobs --config configs
 ```
 
-You should see the three enabled jobs (`hello`, `cleanup`, `compute_stats`)
-with their next-run times. `maintenance` is `enable: false` and is validated but
-deliberately omitted — exactly the ADR-0005 behavior.
+You should see the **four** enabled jobs (`hello`, `cleanup`, `ping_db`,
+`compute_stats`) with their next-run times. `maintenance` is `enable: false` and is
+validated but deliberately omitted — exactly the ADR-0005 behavior.
 
 ### Live run: start the scheduler
 
@@ -125,8 +125,9 @@ The scheduler blocks until you stop it.
 | Linux / macOS | `Ctrl+C` (SIGINT) |
 | Windows | `Ctrl+C` (the CLI handles graceful shutdown; `SIGTERM` has no direct Windows equivalent) |
 
-The `hello` job fires every 2 minutes, so for a quick smoke test you can lower
-its cron to `* * * * *` (every minute) in `configs/jobs/hello.yaml` temporarily.
+The `hello` job fires every 2 seconds, so for a quick smoke test you can raise
+its frequency by lowering its cron to `* * * * * *` (every second) in
+`configs/jobs/hello.yaml` temporarily.
 
 ## Things to try
 
@@ -144,8 +145,10 @@ its cron to `* * * * *` (every minute) in `configs/jobs/hello.yaml` temporarily.
 
 ## Notes
 
-- `examples/` is **gitignored** in this repo (treated like `dev_docs/` — local
-  working material). Do not rely on it being present in a fresh clone.
+- `examples/` is a committed deliverable in this repo (see `AGENTS.md`). It is the
+  basis for the [`docs/examples.md`](../docs/en/examples.md) walkthrough and is
+  intended to survive in version control. Treat changes to it like any other source:
+  review and commit them normally.
 - All job functions in this demo use plain `print()`. In real code, job-internal
   logging is the job's responsibility — gpscheduler does not forward it. The
   scheduler's OWN logs (startup/shutdown/exceptions) go through `gpclog`.
