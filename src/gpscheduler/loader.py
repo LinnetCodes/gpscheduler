@@ -228,6 +228,16 @@ def _validate_one(
 
     # (e) worker_init resolution + gp_context contract (per-job worker_init design).
     func_params = inspect.signature(func).parameters
+    # Fail-Early: gp_context and gp_globals are injected as KEYWORD args at call
+    # time. A positional-only declaration (PEP 570: `def f(gp_context, /)`)
+    # cannot receive them as keywords, so the first execution would raise
+    # TypeError. Reject such signatures at load time instead (logic.02).
+    # NOTE: gp_context is filtered out of the bind check below (injected by the
+    # dispatcher), so the bind check alone cannot catch a positional-only
+    # gp_context — this loop is the only guard for it.
+    for _reserved in (GP_CONTEXT_KEY, GP_GLOBALS_KEY):
+        if _reserved in func_params:
+            _check_not_positional_only(func_params[_reserved], func, src, _reserved)
     declares_gp_context = GP_CONTEXT_KEY in func_params
     init_func: Callable[..., Any] | None = None
     if job_cfg.worker_init is not None:
@@ -326,6 +336,27 @@ def _signature_declares_gp_globals(func: Callable[..., Any]) -> bool:
     sig = inspect.signature(func)
     params = sig.parameters
     return GP_GLOBALS_KEY in params
+
+
+def _check_not_positional_only(
+    param: inspect.Parameter,
+    func: Callable[..., Any],
+    src: str,
+    name: str,
+) -> None:
+    """Reject positional-only declarations of reserved keyword parameters.
+
+    ``gp_context`` and ``gp_globals`` are injected as keyword arguments at call
+    time, so a positional-only declaration (PEP 570) cannot receive them — the
+    first execution would raise ``TypeError``. Fail at load time instead
+    (logic.02).
+    """
+    if param.kind is inspect.Parameter.POSITIONAL_ONLY:
+        raise JobSignatureError(
+            f"{src}: function {func.__qualname__!r} declares {name!r} as "
+            f"positional-only, but gpscheduler injects it as a keyword. "
+            "Declare it as a regular or keyword-only parameter."
+        )
 
 
 def _bind_check_with_params(

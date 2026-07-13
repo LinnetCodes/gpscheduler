@@ -489,3 +489,101 @@ def test_default_import_packages_translates_module_not_found_error() -> None:
     assert bad_pkg in str(exc_info.value)
     # The original error is preserved as __cause__.
     assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
+
+
+# --- positional-only reserved params (logic.02) -----------------------------
+#
+# gp_context and gp_globals are injected as KEYWORD args at call time (see the
+# dispatcher at context.py:_dispatch_contextual_job and loader.py's
+# effective_kwargs). A positional-only declaration (PEP 570: `def f(x, /)`)
+# cannot receive a keyword, so the first execution would raise TypeError. The
+# loader must reject such signatures at load time (Fail-Early).
+
+
+def _job_with_po_gp_context(a: int, gp_context: object, /) -> int:  # noqa: ANN001
+    """Positional-only gp_context (PEP 570): invalid at load time.
+
+    Defined at module scope so registry.register() can key it by qualname.
+    """
+    return a
+
+
+def _job_with_po_gp_globals(gp_globals: dict[str, Any], /) -> int:
+    """Positional-only gp_globals (PEP 570): invalid at load time."""
+    return len(gp_globals)
+
+
+def _job_with_regular_gp_context(a: int, gp_context: dict[str, int]) -> int:
+    """Regular positional-or-keyword gp_context: valid (regression guard)."""
+    return a + gp_context.get("n", 0)
+
+
+def _job_with_kwonly_gp_context(a: int, *, gp_context: dict[str, int]) -> int:
+    """Keyword-only gp_context: valid (regression guard)."""
+    return a + gp_context.get("n", 0)
+
+
+def test_positional_only_gp_context_rejected_at_load() -> None:
+    """A positional-only ``gp_context`` must fail at load, not at first run.
+
+    Regression for logic.02: previously the loader accepted the signature and
+    the dispatcher raised ``TypeError`` on the first execution because it
+    injects ``gp_context`` as a keyword.
+    """
+    reg = _make_registry(_job_with_po_gp_context)
+    reg.register_init(_make_handle)
+    init_dot = f"{_make_handle.__module__}.{_make_handle.__qualname__}"
+    func_dot = f"{_job_with_po_gp_context.__module__}.{_job_with_po_gp_context.__qualname__}"
+    mgr = FakeManager(
+        {"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot, args=[5])}
+    )
+    with pytest.raises(JobSignatureError, match="gp_context") as exc_info:
+        _load(mgr, reg, _sched_config())
+    assert "positional-only" in str(exc_info.value)
+
+
+def test_positional_only_gp_globals_rejected_at_load() -> None:
+    """A positional-only ``gp_globals`` must fail at load, not at first run.
+
+    Same root cause as gp_context: the loader injects gp_globals as a keyword
+    when the signature declares it, so a positional-only declaration cannot
+    receive it.
+    """
+    reg = _make_registry(_job_with_po_gp_globals)
+    func_dot = f"{_job_with_po_gp_globals.__module__}.{_job_with_po_gp_globals.__qualname__}"
+    mgr = FakeManager({"j": GPJobConfig(func=func_dot, cron="* * * * *", args=[])})
+    with pytest.raises(JobSignatureError, match="gp_globals") as exc_info:
+        _load(mgr, reg, _sched_config(job_globals={"db_url": "x"}))
+    assert "positional-only" in str(exc_info.value)
+
+
+def test_regular_gp_context_still_loads() -> None:
+    """Regression guard: a normal positional-or-keyword gp_context still loads."""
+    _reset_cache_for_test()
+    reg = _make_registry(_job_with_regular_gp_context)
+    reg.register_init(_make_handle)
+    init_dot = f"{_make_handle.__module__}.{_make_handle.__qualname__}"
+    func_dot = (
+        f"{_job_with_regular_gp_context.__module__}.{_job_with_regular_gp_context.__qualname__}"
+    )
+    mgr = FakeManager(
+        {"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot, args=[5])}
+    )
+    jobs = _load(mgr, reg, _sched_config())
+    assert len(jobs) == 1
+
+
+def test_keyword_only_gp_context_still_loads() -> None:
+    """Regression guard: a keyword-only gp_context still loads (it accepts kwargs)."""
+    _reset_cache_for_test()
+    reg = _make_registry(_job_with_kwonly_gp_context)
+    reg.register_init(_make_handle)
+    init_dot = f"{_make_handle.__module__}.{_make_handle.__qualname__}"
+    func_dot = (
+        f"{_job_with_kwonly_gp_context.__module__}.{_job_with_kwonly_gp_context.__qualname__}"
+    )
+    mgr = FakeManager(
+        {"j": GPJobConfig(func=func_dot, cron="* * * * *", worker_init=init_dot, args=[5])}
+    )
+    jobs = _load(mgr, reg, _sched_config())
+    assert len(jobs) == 1
