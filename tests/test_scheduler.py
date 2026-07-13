@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import signal
 import threading
 import time
@@ -105,6 +106,56 @@ def test_shutdown_force_exits_on_timeout() -> None:
         # Restore in case of failure so the background thread can clean up.
         s._scheduler.shutdown = original_shutdown  # type: ignore[method-assign]
         # Ensure the daemon shutdown thread (stuck in time.sleep(20)) is gone.
+
+
+@pytest.mark.slow
+def test_shutdown_timeout_does_not_raise_on_real_scheduler() -> None:
+    """Real APScheduler integration: shutdown(timeout=T) with a running job
+    that outlasts T must NOT raise SchedulerNotRunningError.
+
+    Reproduces logic.01: previously the second shutdown(wait=False) call raised
+    because APScheduler had already transitioned itself to STOPPED inside the
+    background thread's shutdown(wait=True) (APScheduler marks itself stopped
+    BEFORE waiting). The unit test ``test_shutdown_force_exits_on_timeout``
+    mocks ``_scheduler.shutdown`` so this real state transition is never
+    exercised — this test drives the real APScheduler so the regression cannot
+    slip past the suite again.
+    """
+    from apscheduler.schedulers import SchedulerNotRunningError
+    from apscheduler.triggers.cron import CronTrigger
+
+    # A tiny shutdown timeout; the job outlasts it, forcing the timeout branch.
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=0.1)
+    s = GPScheduler(cfg)
+
+    def _long_running() -> None:
+        # Sleep longer than the shutdown timeout so the job is still running
+        # when shutdown() is invoked.
+        time.sleep(0.7)
+
+    s._scheduler.add_job(
+        _long_running,
+        trigger=CronTrigger(second="*"),
+        id="longjob",
+        executor="thread",
+    )
+    s.start()
+    try:
+        # Give the cron trigger (fires every second) time to start the job.
+        time.sleep(1.2)
+        # The core assertion: shutdown() must return cleanly. Previously it
+        # raised SchedulerNotRunningError from the second shutdown(wait=False).
+        try:
+            s.shutdown()
+        except SchedulerNotRunningError:
+            pytest.fail("shutdown() raised SchedulerNotRunningError (logic.01 regression)")
+    finally:
+        # Defensive cleanup: ensure the scheduler is fully stopped. After the
+        # fix shutdown() should already have done this, but a forced exit here
+        # guards against leaving a BackgroundScheduler thread running if the
+        # test itself errors out before reaching shutdown().
+        with contextlib.suppress(SchedulerNotRunningError):
+            s._scheduler.shutdown(wait=False)
 
 
 def test_process_init_is_callable() -> None:

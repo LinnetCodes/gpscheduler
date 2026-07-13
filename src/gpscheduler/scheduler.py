@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfoNotFoundError
 import gpclog
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.executors.pool import ProcessPoolExecutor, ThreadPoolExecutor
+from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.background import BackgroundScheduler
 from gpconfig import GPConfigFolder, GPConfigManager, GPConfigurable
 from gpconfig.exceptions import GPConfigError
@@ -199,7 +200,16 @@ class GPScheduler(GPConfigurable):
                     f"shutdown timed out after {resolved}s; forcing exit "
                     "(running jobs may be interrupted)"
                 )
-                self._scheduler.shutdown(wait=False)
+                # APScheduler marks itself stopped before waiting in
+                # shutdown(wait=True), so by now the background thread may have
+                # already transitioned the scheduler to STOPPED — in which case
+                # this second shutdown(wait=False) raises SchedulerNotRunningError.
+                # Swallow it: the goal is best-effort forced exit; if APScheduler
+                # is already stopped, the goal is met. (logic.01)
+                try:
+                    self._scheduler.shutdown(wait=False)
+                except SchedulerNotRunningError:
+                    self._logger.debug("scheduler already stopped when forcing exit")
         # Drop this scheduler's worker_init cache entries (logic.03, Option C).
         # In the main process this keeps a rebuild-from-new-config from reusing
         # a stale cached object; in spawned workers each worker owns its own
