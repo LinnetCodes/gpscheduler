@@ -109,6 +109,40 @@ def test_list_jobs_shows_unlimited_when_max_runs_absent(tmp_path: Path) -> None:
     assert "max_runs: unlimited" in result.output
 
 
+def test_list_jobs_output_is_alphabetical_by_job_id(tmp_path: Path) -> None:
+    """list-jobs lists jobs in alphabetical order by job id (inconsistency.04).
+
+    The job id is the jobs/<name>.yaml filename stem. We register jobs whose
+    filename-stem ids sort in a different order than they are written to disk
+    ("zebra" written first, "apple" second, "mango" third) and assert the printed
+    job lines appear alphabetically. This promotes alphabetical ordering from a
+    gpconfig side-effect to an explicit gpscheduler contract.
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    # Write in non-alphabetical order to defeat any incidental FS ordering.
+    for stem in ("zebra", "apple", "mango"):
+        (cfg_folder / "jobs" / f"{stem}.yaml").write_text(
+            f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\n",
+            encoding="utf-8",
+        )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Pull out the job ids in print order from lines like "  - apple: next run ...".
+    printed_ids = [
+        line.split(":")[0].strip().removeprefix("- ").strip()
+        for line in result.output.splitlines()
+        if line.lstrip().startswith("- ")
+    ]
+    assert printed_ids == ["apple", "mango", "zebra"], result.output
+
+
 def test_run_with_bad_package_reports_error_and_exits_1(tmp_path: Path) -> None:
     """End-to-end: a bad packages entry surfaces as `error:` + exit 1, not a traceback.
 

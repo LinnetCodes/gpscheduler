@@ -72,7 +72,12 @@ def list_jobs_cmd(config: str | None, project: str) -> None:
         click.echo(f"error: {e}", err=True)
         sys.exit(1)
 
-    jobs = scheduler.get_jobs()
+    # Sort by job id so list-jobs output is alphabetical as a gpscheduler
+    # contract, independent of APScheduler's iteration order. Today the order
+    # happens to be alphabetical only as a gpconfig side-effect
+    # (GPConfigManager.list_configs returns sorted items); sorting here isolates
+    # us from any future change to that internal behavior.
+    jobs = sorted(scheduler.get_jobs(), key=lambda j: j.id)
     if not jobs:
         click.echo("No enabled jobs.")
         return

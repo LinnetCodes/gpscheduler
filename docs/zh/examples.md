@@ -79,10 +79,10 @@ gpscheduler run --config configs
 
 ```
 4 enabled job(s):
-  - hello: next run 2026-07-12 10:00:02+08:00 (max_runs: 10)
-  - ping_db: next run 2026-07-12 10:00:05+08:00 (max_runs: unlimited)
-  - compute_stats: next run 2026-07-12 10:00:10+08:00 (max_runs: unlimited)
-  - cleanup: next run 2026-07-13 03:30:00+08:00 (max_runs: unlimited)
+  - cleanup: next run 2026-07-14 03:30:00+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-13 21:06:40+08:00 (max_runs: unlimited)
+  - hello: next run 2026-07-13 21:06:34+08:00 (max_runs: 10)
+  - ping_db: next run 2026-07-13 21:06:35+08:00 (max_runs: unlimited)
 ```
 
 `maintenance` 是 `enable: false`，所以它被校验但不出现在列表中。

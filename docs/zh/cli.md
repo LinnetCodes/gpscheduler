@@ -50,14 +50,14 @@ gpscheduler list-jobs [--config PATH] [--project NAME]
 
 ```
 4 enabled job(s):
-  - hello: next run 2026-07-12 10:00:02+08:00 (max_runs: 10)
-  - cleanup: next run 2026-07-13 03:30:00+08:00 (max_runs: unlimited)
-  - ping_db: next run 2026-07-12 10:00:05+08:00 (max_runs: unlimited)
-  - compute_stats: next run 2026-07-12 10:00:10+08:00 (max_runs: unlimited)
+  - cleanup: next run 2026-07-14 03:30:00+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-13 21:06:40+08:00 (max_runs: unlimited)
+  - hello: next run 2026-07-13 21:06:34+08:00 (max_runs: 10)
+  - ping_db: next run 2026-07-13 21:06:35+08:00 (max_runs: unlimited)
 ```
 
-每行末尾显示该 job 的 `max_runs` 设置 —— 正整数，或 `unlimited`（未设上限，默认值）。见
-[配置 → max_runs](configuration.md)。
+Job 按 id 字母序排列。每行末尾显示该 job 的 `max_runs` 设置 —— 正整数，或 `unlimited`（未设上限，
+默认值）。见 [配置 → max_runs](configuration.md)。
 
 如果没有启用 job，会打印 `No enabled jobs.`。因为 `list-jobs` 加载的是一个**未启动**的调度器，
 下次触发时间直接由每个 job 的 trigger 计算；显示的是“如果现在启动，每个 job *将会*在何时下一次
