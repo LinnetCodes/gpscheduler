@@ -86,6 +86,34 @@ gpscheduler guarantees the initializer runs only **once per execution context** 
 internal lock). Whether the returned object is safe to share across **concurrent
 threads** is your responsibility.
 
+## Process jobs and `stdout`
+
+A process job runs in a **separate spawned worker process**, which has its own
+`stdout` buffer independent of the main process. When the main process writes to a
+terminal, `stdout` is line-buffered (each `\n` flushes). But when `stdout` is
+**redirected to a file or a pipe** — e.g. `gpscheduler run > log.txt`, a systemd unit,
+a daemon, or any non-TTY sink — Python switches to **block buffering** (it flushes only
+when the buffer fills, ~4–8 KB). Because a worker process is long-lived (pooled and
+reused) and typically produces little output, that buffer may not fill for a long time,
+so a process job's `print()` output can **appear delayed or absent** in the redirected
+file — even though the job executed normally.
+
+This is standard `concurrent.futures.ProcessPoolExecutor` behavior, not a gpscheduler
+bug. It affects **only the visibility of `print()`/`stdout`** from process jobs — the
+job's actual execution, return value, side effects, and `gpclog` output are unaffected
+(`gpclog` writes to its own file with `flush=True`, and does not go through `stdout`).
+Thread jobs share the main process's buffer and are normally flushed by other activity,
+so they are rarely affected.
+
+How to observe process jobs reliably:
+
+- **Don't rely on `print()`** for diagnostics inside process jobs. Write logs via
+  `gpclog` or to a file of your own — both are visible immediately regardless of how the
+  process was launched. (This is the recommended practice for *any* job, thread or
+  process; see [API → embedded usage](api.md#embedded-usage).)
+- **If you must see `stdout` live**, run the scheduler attached to a terminal, or set
+  `PYTHONUNBUFFERED=1` (`python -u` also works) so output is flushed on every write.
+
 ## Graceful shutdown timeout
 
 The `timeout` field in `scheduler.yaml` (or the `timeout` argument to

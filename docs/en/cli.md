@@ -121,6 +121,11 @@ running jobs to finish (or forever if `timeout` is unset), then exits. How that 
 is enforced differs by executor model — see
 [Performance → shutdown timeout](performance.md#graceful-shutdown-timeout).
 
+> **Redirecting output?** When you run `gpscheduler run` with `stdout` redirected to a
+> file or pipe (a daemon, systemd, `> log.txt`, …), a **process** job's `print()` output
+> may appear delayed or missing — the job still runs normally. See
+> [Performance → Process jobs and `stdout`](performance.md#process-jobs-and-stdout).
+
 ## Exit codes
 
 | Code | Meaning |

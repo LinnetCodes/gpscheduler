@@ -233,6 +233,12 @@ builds `init_stats_client` **inside the worker** on first execution. The heavy o
 never crosses the process boundary — so even though it is just a dict in this demo, it
 could equally be a live socket, a lock, or an ML model.
 
+> **Running this demo with output redirected?** `compute_stats` (and any process job)
+> uses `print()`, whose output can appear delayed or missing when `stdout` is redirected
+> to a file or pipe — the job still runs. This is easiest to see by running the demo in a
+> terminal directly. See [Performance → Process jobs and `stdout`](performance.md#process-jobs-and-stdout)
+> for why and how to observe process jobs reliably.
+
 ### 5. `maintenance` — disabled but still validated
 
 ```yaml

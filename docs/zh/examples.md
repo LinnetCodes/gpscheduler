@@ -222,6 +222,11 @@ executor: process             # 覆盖调度器默认
 `demo_jobs`（重新注册装饰器），然后在首次执行时**在 worker 内部**构建 `init_stats_client`。重
 对象从不跨进程边界 —— 所以尽管本 demo 里它只是一个 dict，它同样可以是活跃 socket、锁或 ML 模型。
 
+> **重定向输出跑这个 demo？** `compute_stats`（以及任何进程 job）用的是 `print()`，当 `stdout`
+> 被重定向到文件或管道时，其输出可能看起来延迟或缺失——job 仍会正常运行。直接在终端里跑这个 demo
+> 最容易看到输出。原因及如何可靠观察进程 job 见
+> [性能 → 进程 job 与 `stdout`](performance.md#进程-job-与-stdout)。
+
 ### 5. `maintenance` —— 禁用但仍校验
 
 ```yaml

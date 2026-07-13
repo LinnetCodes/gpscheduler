@@ -77,6 +77,28 @@ kwargs 试 pickle，失败就在**启动时**抛 `JobSignatureError`（Fail-Earl
 gpscheduler 保证初始化器在每个执行上下文里只运行**一次**（内部用锁）。但返回的对象是否能在
 **并发线程**间安全共享是你的责任。
 
+## 进程 job 与 `stdout`
+
+进程 job 跑在**独立的 spawned worker 进程**里，该进程有自己的 `stdout` 缓冲区，与主进程相互独
+立。当主进程输出到终端时，`stdout` 是行缓冲（遇 `\n` 即 flush）。但当 `stdout` 被**重定向到文件
+或管道**时——例如 `gpscheduler run > log.txt`、systemd unit、daemon 或任何非 TTY 目标——Python
+会切换为**块缓冲**（仅当缓冲区写满约 4–8 KB 时才 flush）。由于 worker 进程是长期存活的（被池化复
+用）且通常输出量不大，缓冲区可能很久都不会写满，于是进程 job 的 `print()` 输出在重定向文件里
+**可能看起来延迟甚至缺失**——尽管 job 实际上正常执行了。
+
+这是 `concurrent.futures.ProcessPoolExecutor` 的标准行为，不是 gpscheduler 的 bug。它**只影响进程
+job 的 `print()`/`stdout` 的可见性**——job 的实际执行、返回值、副作用以及 `gpclog` 输出都不受影响
+（`gpclog` 以 `flush=True` 直接写自己的文件，不走 `stdout`）。线程 job 与主进程共用缓冲区，通常会被
+其它活动顺带 flush，因此很少受影响。
+
+要可靠地观察进程 job：
+
+- **不要依赖 `print()`** 做进程 job 的诊断输出。通过 `gpclog` 或自己写文件来记日志——无论进程以
+  何种方式启动都能立即看到（这也是**任意** job——无论线程还是进程——的推荐做法；见
+  [API → 嵌入式用法](api.md#嵌入式用法)）。
+- **如果必须实时看 `stdout`**，让调度器在前台终端运行，或设置 `PYTHONUNBUFFERED=1`
+  （`python -u` 也可以），使每次写入都立即 flush。
+
 ## 优雅关停超时
 
 `scheduler.yaml` 的 `timeout` 字段（或 `shutdown(timeout=...)` 的 `timeout` 参数）限定调度器

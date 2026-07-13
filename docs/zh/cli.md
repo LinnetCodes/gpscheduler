@@ -110,6 +110,10 @@ Windows 下，`taskkill` 不能可靠送达 `SIGTERM`，且没有直接的 `SIGK
 `timeout` 则永远等），然后退出。超时如何强制执行因 executor 模型而异 —— 见
 [性能 → 关停超时](performance.md#优雅关停超时)。
 
+> **重定向输出？** 当你把 `gpscheduler run` 的 `stdout` 重定向到文件或管道（daemon、systemd、
+> `> log.txt`……）时，**进程** job 的 `print()` 输出可能看起来延迟或缺失——job 仍会正常运行。见
+> [性能 → 进程 job 与 `stdout`](performance.md#进程-job-与-stdout)。
+
 ## 退出码
 
 | 码 | 含义 |
