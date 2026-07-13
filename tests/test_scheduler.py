@@ -240,6 +240,82 @@ def test_create_scheduler_with_no_jobs_folder_is_empty_schedule(tmp_path: Path) 
     assert s.get_jobs() == []
 
 
+def test_get_disabled_job_names_returns_disabled_from_config(tmp_path: Path) -> None:
+    """create_scheduler surfaces disabled job names via get_disabled_job_names (behavior.02).
+
+    A disabled job is validated but not registered (ADR-0005), so it is absent
+    from get_jobs(). Its name must be available via get_disabled_job_names() so
+    the list-jobs dry run can report it was checked. End-to-end through a real
+    GPConfigManager + load_jobs.
+    """
+    cfg_folder = tmp_path / "cfg"
+    (cfg_folder / "jobs").mkdir(parents=True)
+    (cfg_folder / "global_env.yaml").write_text("project: test\n", encoding="utf-8")
+    (cfg_folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\n"
+        "configured_class_name: GPScheduler\n"
+        "timezone: UTC\n"
+        "max_workers: 1\n",
+        encoding="utf-8",
+    )
+    quick_dotted = f"{_quick_task.__module__}.{_quick_task.__qualname__}"
+    (cfg_folder / "jobs" / "active.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {quick_dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+    (cfg_folder / "jobs" / "dormant.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {quick_dotted}\ncron: '* * * * *'\nenable: false\n",
+        encoding="utf-8",
+    )
+
+    s = create_scheduler(cfg_folder=cfg_folder, project_name="gpscheduler_test")
+    assert isinstance(s, GPScheduler)
+    # Disabled job is NOT registered with APScheduler.
+    assert [j.id for j in s.get_jobs()] == ["active"]
+    # But its name is surfaced for the CLI dry run.
+    assert s.get_disabled_job_names() == ["dormant"]
+
+
+def test_get_disabled_job_names_empty_when_all_enabled(tmp_path: Path) -> None:
+    """No disabled jobs -> empty list (the common case; no CLI noise)."""
+    cfg_folder = tmp_path / "cfg"
+    (cfg_folder / "jobs").mkdir(parents=True)
+    (cfg_folder / "global_env.yaml").write_text("project: test\n", encoding="utf-8")
+    (cfg_folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\n"
+        "configured_class_name: GPScheduler\n"
+        "timezone: UTC\n"
+        "max_workers: 1\n",
+        encoding="utf-8",
+    )
+    quick_dotted = f"{_quick_task.__module__}.{_quick_task.__qualname__}"
+    (cfg_folder / "jobs" / "active.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {quick_dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+
+    s = create_scheduler(cfg_folder=cfg_folder, project_name="gpscheduler_test")
+    assert s.get_disabled_job_names() == []
+
+
+def test_get_disabled_job_names_returns_copy() -> None:
+    """get_disabled_job_names returns a fresh list each call (mutation safety).
+
+    The accessor returns a copy so CLI callers cannot corrupt internal state.
+    Pin this: a direct construct sets _disabled_job_names, and two calls return
+    independent lists.
+    """
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1)
+    s = GPScheduler(cfg)
+    s._disabled_job_names = ["dormant", "paused"]
+    first = s.get_disabled_job_names()
+    first.append("mutated")
+    second = s.get_disabled_job_names()
+    assert second == ["dormant", "paused"]
+    # Internal state is untouched.
+    assert s._disabled_job_names == ["dormant", "paused"]
+
+
 def test_run_scheduler_blocks_until_shutdown(monkeypatch, tmp_path: Path) -> None:
     cfg = GPSchedulerConfig(timezone="UTC", max_workers=1, timeout=5)
     s = GPScheduler(cfg)

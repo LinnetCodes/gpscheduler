@@ -19,7 +19,7 @@ from gpscheduler.exceptions import (
     PackageImportError,
     ReservedKeyError,
 )
-from gpscheduler.loader import LoadedJob, _default_import_packages, load_jobs
+from gpscheduler.loader import LoadedJob, LoadedJobs, _default_import_packages, load_jobs
 from gpscheduler.registry import Registry
 from gpscheduler.registry import registry as _global_registry
 
@@ -84,6 +84,28 @@ def _load(
     registry: Registry,
     sched: GPSchedulerConfig,
 ) -> list[LoadedJob]:
+    """Convenience wrapper returning only the enabled jobs.
+
+    Most loader tests care about the enabled-jobs list (the previously-public
+    return type). ``load_jobs`` now returns a ``LoadedJobs`` (enabled +
+    disabled names, behavior.02); this helper unwraps ``.enabled`` so existing
+    assertions keep working. Tests that need disabled names call ``load_jobs``
+    directly (or use ``_load_full``).
+    """
+    return load_jobs(
+        manager=manager,
+        registry=registry,
+        sched_config=sched,
+        import_packages=lambda _pkgs: None,
+    ).enabled
+
+
+def _load_full(
+    manager: FakeManager,
+    registry: Registry,
+    sched: GPSchedulerConfig,
+) -> LoadedJobs:
+    """Like ``_load`` but returns the full ``LoadedJobs`` (enabled + disabled)."""
     return load_jobs(
         manager=manager,
         registry=registry,
@@ -128,6 +150,38 @@ def test_disabled_job_validated_but_not_returned() -> None:
     )
     jobs = _load(mgr, reg, _sched_config())
     assert jobs == []
+
+
+def test_load_jobs_collects_disabled_job_names() -> None:
+    """load_jobs returns disabled job names so the CLI can surface them (behavior.02).
+
+    A disabled job is fully validated (Fail-Early) but not registered. Its name
+    must appear in ``LoadedJobs.disabled`` so ``list-jobs`` can print a summary
+    line telling the user it was checked. Enabled jobs are excluded from the
+    disabled list.
+    """
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {
+            "active": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1]),
+            "dormant": GPJobConfig(
+                func=dotted(_func_no_globals), cron="0 3 * * *", args=[1], enable=False
+            ),
+        }
+    )
+    result = _load_full(mgr, reg, _sched_config())
+    assert [j.name for j in result.enabled] == ["active"]
+    assert result.disabled == ["dormant"]
+
+
+def test_load_jobs_disabled_empty_when_all_enabled() -> None:
+    """Regression guard: no disabled jobs -> empty disabled list (no CLI noise)."""
+    reg = _make_registry(_func_no_globals)
+    mgr = FakeManager(
+        {"active": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])}
+    )
+    result = _load_full(mgr, reg, _sched_config())
+    assert result.disabled == []
 
 
 def test_missing_func_raises_not_scheduled() -> None:

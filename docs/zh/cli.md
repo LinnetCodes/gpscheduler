@@ -54,6 +54,7 @@ gpscheduler list-jobs [--config PATH] [--project NAME]
   - compute_stats: next run 2026-07-13 21:06:40+08:00 (max_runs: unlimited)
   - hello: next run 2026-07-13 21:06:34+08:00 (max_runs: 10)
   - ping_db: next run 2026-07-13 21:06:35+08:00 (max_runs: unlimited)
+1 disabled job(s) validated but not registered: maintenance
 ```
 
 Job 按 id 字母序排列。每行末尾显示该 job 的 `max_runs` 设置 —— 正整数，或 `unlimited`（未设上限，
@@ -62,6 +63,17 @@ Job 按 id 字母序排列。每行末尾显示该 job 的 `max_runs` 设置 —
 如果没有启用 job，会打印 `No enabled jobs.`。因为 `list-jobs` 加载的是一个**未启动**的调度器，
 下次触发时间直接由每个 job 的 trigger 计算；显示的是“如果现在启动，每个 job *将会*在何时下一次
 触发”。
+
+禁用 job（`enable: false`）在加载时会被**完整校验**（Fail-Early），但不会注册到调度器 —— 它们不出
+现在上面的启用列表里。当校验到一个或多个禁用 job 时，`list-jobs` 会追加一行汇总，列出它们的名字：
+
+```
+1 disabled job(s) validated but not registered: maintenance
+```
+
+这告诉你禁用 job 也被检查过了，所以一份看起来干净的 `list-jobs` 输出绝不会在 `gpscheduler run` 重
+新校验同一配置时突然失败。名字按字母序排列（与启用列表一致），且在没有禁用 job 时整行省略（不影
+响常见场景的整洁）。
 
 ## 配置如何定位
 

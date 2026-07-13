@@ -57,6 +57,7 @@ Same `--config` and `--project` options and defaults as `run`.
   - compute_stats: next run 2026-07-13 21:06:40+08:00 (max_runs: unlimited)
   - hello: next run 2026-07-13 21:06:34+08:00 (max_runs: 10)
   - ping_db: next run 2026-07-13 21:06:35+08:00 (max_runs: unlimited)
+1 disabled job(s) validated but not registered: maintenance
 ```
 
 Jobs are listed in alphabetical order by job id. Each line shows the job's `max_runs`
@@ -66,6 +67,19 @@ setting — a positive integer, or `unlimited` when the job has no cap (the defa
 If there are no enabled jobs, it prints `No enabled jobs.` Because `list-jobs` loads an
 **unstarted** scheduler, next-fire times are computed directly from each job's trigger;
 they show when each job *would* next fire if the scheduler were started now.
+
+Disabled jobs (`enable: false`) are **fully validated** at load time (Fail-Early) but not
+registered with the scheduler — they do not appear in the enabled list above. When one or
+more disabled jobs were validated, `list-jobs` prints a trailing summary line naming them:
+
+```
+1 disabled job(s) validated but not registered: maintenance
+```
+
+This tells you the disabled jobs were checked, so a clean-looking `list-jobs` output is
+never a surprise failure when `gpscheduler run` re-validates the same config. The names are
+sorted alphabetically (same convention as the enabled list), and the line is omitted
+entirely when there are no disabled jobs (no noise for the common case).
 
 ## How config is located
 

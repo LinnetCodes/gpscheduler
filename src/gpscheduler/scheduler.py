@@ -128,6 +128,11 @@ class GPScheduler(GPConfigurable):
         self._run_counts: dict[str, int] = {}
         self._job_max_runs: dict[str, int | None] = {}
         self._run_counts_lock = threading.Lock()
+        # Names of jobs validated at load time but not registered (enable=False,
+        # ADR-0005). Populated by create_scheduler from load_jobs(); empty until
+        # then. Surfaced via get_disabled_job_names() for the list-jobs dry run
+        # so users know disabled jobs were checked (behavior.02).
+        self._disabled_job_names: list[str] = []
         self._scheduler.add_listener(
             self._on_job_run, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR
         )
@@ -170,6 +175,17 @@ class GPScheduler(GPConfigurable):
         that need to distinguish should check :meth:`get_jobs` first.
         """
         return self._job_max_runs.get(job_id)
+
+    def get_disabled_job_names(self) -> list[str]:
+        """Return names of jobs validated at load time but not registered (``enable=False``).
+
+        Disabled jobs are fully validated (Fail-Early) but not registered with
+        APScheduler (ADR-0005). Surfacing their names lets ``list-jobs`` report
+        them so users know they were checked, avoiding surprise failures when
+        ``run`` re-validates the same config (behavior.02). Empty if all jobs
+        were enabled. Returns a copy so callers cannot mutate internal state.
+        """
+        return list(self._disabled_job_names)
 
     def start(self) -> None:
         """Start the BackgroundScheduler (returns immediately; background thread)."""
@@ -351,7 +367,11 @@ def create_scheduler(
     except GPConfigError as e:
         raise ConfigError(f"failed to load jobs: {e}") from e
 
-    scheduler.register_jobs(loaded)
+    scheduler.register_jobs(loaded.enabled)
+    # Surfacing disabled job names (behavior.02): register_jobs still receives
+    # ONLY enabled jobs (unchanged semantics), but the scheduler remembers the
+    # disabled ones so list-jobs can report they were validated.
+    scheduler._disabled_job_names = list(loaded.disabled)
     return scheduler
 
 

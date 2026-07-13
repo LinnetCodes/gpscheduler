@@ -143,6 +143,113 @@ def test_list_jobs_output_is_alphabetical_by_job_id(tmp_path: Path) -> None:
     assert printed_ids == ["apple", "mango", "zebra"], result.output
 
 
+def test_list_jobs_prints_disabled_summary(tmp_path: Path) -> None:
+    """list-jobs surfaces disabled jobs so a green dry run is not misleading.
+
+    A disabled job is fully validated (Fail-Early) but not registered, so it
+    does not appear in the enabled-jobs list. Without this summary line a user
+    could see "N enabled job(s):" and assume the whole config is fine, then be
+    surprised when ``gpscheduler run`` fails on a typo in a disabled job. The
+    summary tells them disabled jobs WERE checked (behavior.02).
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    (cfg_folder / "jobs" / "demo.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+    (cfg_folder / "jobs" / "paused.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\nenable: false\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "1 enabled job(s)" in result.output
+    # The disabled summary names the disabled job and is omitted entirely when
+    # N=0 (here N=1). Names are sorted alphabetically (inconsistency.04).
+    assert "1 disabled job(s) validated but not registered: paused" in result.output
+    # The disabled job must NOT appear in the enabled list.
+    assert "demo" in result.output
+
+
+def test_list_jobs_omits_disabled_summary_when_all_enabled(tmp_path: Path) -> None:
+    """Regression guard: no disabled-jobs line when all jobs are enabled.
+
+    The summary is intentionally omitted in the common case to avoid noise
+    (behavior.02). This test pins that: a single enabled job and NO disabled
+    jobs must not produce the disabled-summary line.
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    (cfg_folder / "jobs" / "demo.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "disabled job(s)" not in result.output
+
+
+def test_list_jobs_disabled_summary_shows_when_no_enabled_jobs(tmp_path: Path) -> None:
+    """The disabled summary prints even when there are zero enabled jobs.
+
+    A config with only disabled jobs must print "No enabled jobs." AND the
+    disabled summary. The earlier early-return after "No enabled jobs." would
+    have skipped the summary; this test guards against that regression.
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    (cfg_folder / "jobs" / "paused.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\nenable: false\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "no enabled jobs" in result.output.lower()
+    assert "1 disabled job(s) validated but not registered: paused" in result.output
+
+
+def test_list_jobs_disabled_summary_sorts_names_alphabetically(tmp_path: Path) -> None:
+    """Multiple disabled job names are sorted alphabetically (inconsistency.04).
+
+    Writes disabled job files in non-alphabetical on-disk order and asserts the
+    summary line lists them sorted.
+    """
+    cfg_folder = _make_cfg_folder(tmp_path)
+    dotted = f"{_cli_demo_task.__module__}.{_cli_demo_task.__qualname__}"
+    for stem in ("zebra_disabled", "apple_disabled", "mango_disabled"):
+        (cfg_folder / "jobs" / f"{stem}.yaml").write_text(
+            f"cfg_class_name: GPJobConfig\nfunc: {dotted}\ncron: '* * * * *'\nenable: false\n",
+            encoding="utf-8",
+        )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["list-jobs", "--config", str(cfg_folder), "--project", "gpscheduler_test"],
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        "3 disabled job(s) validated but not registered: "
+        "apple_disabled, mango_disabled, zebra_disabled"
+    ) in result.output
+
+
 def test_run_with_bad_package_reports_error_and_exits_1(tmp_path: Path) -> None:
     """End-to-end: a bad packages entry surfaces as `error:` + exit 1, not a traceback.
 

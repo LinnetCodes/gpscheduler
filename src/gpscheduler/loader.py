@@ -57,6 +57,20 @@ class LoadedJob:
     max_runs: int | None = None  # None = unlimited (ADR-0016)
 
 
+@dataclass
+class LoadedJobs:
+    """Result of ``load_jobs``: enabled jobs to register + disabled job names.
+
+    Disabled jobs are fully validated (Fail-Early) but excluded from
+    ``enabled`` (ADR-0005). Surfacing their names here lets the CLI's
+    ``list-jobs`` dry run report them, so users know disabled jobs were
+    checked even though they are not registered (behavior.02).
+    """
+
+    enabled: list[LoadedJob]
+    disabled: list[str]  # filename stems (job names) of enable=False jobs
+
+
 def _default_import_packages(packages: list[str]) -> None:
     """Import each top-level package name so @scheduled side-effects fire."""
     for pkg in packages:
@@ -142,11 +156,13 @@ def load_jobs(
     import_packages: ImportPackagesFn = _default_import_packages,
     cron_parser: CronParserFn = parse_cron,
     context_cache_token: str | None = None,
-) -> list[LoadedJob]:
+) -> LoadedJobs:
     """Import packages, then load + validate every job under ``jobs/``.
 
     Validation runs for ALL jobs (enabled and disabled). Disabled jobs are
-    validated but excluded from the returned list (ADR-0005).
+    validated but excluded from the ``enabled`` list (ADR-0005); their names
+    are returned in ``disabled`` so callers (e.g. ``list-jobs``) can surface
+    that they were checked (behavior.02).
 
     ``context_cache_token`` is the owning scheduler's UUID hex string; it is
     threaded into each worker_init job's dispatcher args so the per-scheduler
@@ -169,7 +185,8 @@ def load_jobs(
     except ConfigNotFoundError:
         job_names = []
 
-    loaded: list[LoadedJob] = []
+    enabled: list[LoadedJob] = []
+    disabled: list[str] = []
     # get_config auto-detects GPJobConfig via cfg_class_name (returns a
     # GPJobConfig instance for jobs/<name>.yaml).
     for name in job_names:
@@ -183,8 +200,10 @@ def load_jobs(
             context_cache_token=context_cache_token,
         )
         if loaded_job.enable:
-            loaded.append(loaded_job)
-    return loaded
+            enabled.append(loaded_job)
+        else:
+            disabled.append(name)
+    return LoadedJobs(enabled=enabled, disabled=disabled)
 
 
 def _validate_one(

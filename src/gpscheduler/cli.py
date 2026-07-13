@@ -78,14 +78,28 @@ def list_jobs_cmd(config: str | None, project: str) -> None:
     # (GPConfigManager.list_configs returns sorted items); sorting here isolates
     # us from any future change to that internal behavior.
     jobs = sorted(scheduler.get_jobs(), key=lambda j: j.id)
-    if not jobs:
+    if jobs:
+        click.echo(f"{len(jobs)} enabled job(s):")
+        for j in jobs:
+            mr = scheduler.get_job_max_runs(j.id)
+            mr_str = str(mr) if mr is not None else "unlimited"
+            click.echo(f"  - {j.id}: next run {_next_run_time(j)} (max_runs: {mr_str})")
+    else:
         click.echo("No enabled jobs.")
-        return
-    click.echo(f"{len(jobs)} enabled job(s):")
-    for j in jobs:
-        mr = scheduler.get_job_max_runs(j.id)
-        mr_str = str(mr) if mr is not None else "unlimited"
-        click.echo(f"  - {j.id}: next run {_next_run_time(j)} (max_runs: {mr_str})")
+
+    # Always check for disabled jobs (even when there are no enabled ones). A
+    # disabled job is fully validated at load time (Fail-Early) but not
+    # registered (ADR-0005), so it does not appear in get_jobs(). Surfacing its
+    # name here tells the user it WAS checked, so a green-looking `list-jobs`
+    # output is never a surprise failure when `run` re-validates the same
+    # config (behavior.02). The line is omitted entirely when N=0 to avoid
+    # noise in the common all-enabled case.
+    disabled = scheduler.get_disabled_job_names()
+    if disabled:
+        # Sort for deterministic output, matching the enabled-jobs alphabetical
+        # convention (inconsistency.04).
+        names = ", ".join(sorted(disabled))
+        click.echo(f"{len(disabled)} disabled job(s) validated but not registered: {names}")
 
 
 if __name__ == "__main__":
