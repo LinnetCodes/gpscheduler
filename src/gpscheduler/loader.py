@@ -134,11 +134,18 @@ def load_jobs(
     sched_config: GPSchedulerConfig,
     import_packages: ImportPackagesFn = _default_import_packages,
     cron_parser: CronParserFn = parse_cron,
+    context_cache_token: str | None = None,
 ) -> list[LoadedJob]:
     """Import packages, then load + validate every job under ``jobs/``.
 
     Validation runs for ALL jobs (enabled and disabled). Disabled jobs are
     validated but excluded from the returned list (ADR-0005).
+
+    ``context_cache_token`` is the owning scheduler's UUID hex string; it is
+    threaded into each worker_init job's dispatcher args so the per-scheduler
+    cache key ``(token, job_name)`` isolates worker_init objects across
+    co-resident schedulers (logic.03, Option A). ``None`` is the legacy/no-
+    scheduler-context default (cache key ``(None, job_name)``).
 
     Raises:
         NotScheduledError, CronExpressionError, JobSignatureError,
@@ -166,6 +173,7 @@ def load_jobs(
             registry=registry,
             sched_config=sched_config,
             cron_parser=cron_parser,
+            context_cache_token=context_cache_token,
         )
         if loaded_job.enable:
             loaded.append(loaded_job)
@@ -179,6 +187,7 @@ def _validate_one(
     registry: Registry,
     sched_config: GPSchedulerConfig,
     cron_parser: CronParserFn,
+    context_cache_token: str | None = None,
 ) -> LoadedJob:
     # Source identifier for error messages: the config file path (set by
     # gpconfig on every loaded config), so users can see WHICH file is wrong.
@@ -247,12 +256,16 @@ def _validate_one(
     # and re-resolves it in spawned workers; a callable INSTANCE cannot survive
     # that (obj_to_ref returns the class, losing instance state), so we register
     # a module-level FUNCTION as job.func and pass the per-job dotpaths +
-    # job_name + gp_globals as leading positional args (all picklable).
+    # job_name + gp_globals as leading positional args (all picklable). The
+    # scheduler's context_cache_token leads the args so the dispatcher's cache
+    # key is (token, job_name) — isolating worker_init objects per scheduler
+    # (logic.03, Option A).
     effective_func: Callable[..., Any] = func
     effective_args: list[Any] = list(job_cfg.args)
     if init_func is not None:
         effective_func = _dispatch_contextual_job
         effective_args = [
+            context_cache_token,
             job_cfg.func,
             job_cfg.worker_init,
             name,

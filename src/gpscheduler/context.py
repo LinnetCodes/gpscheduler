@@ -10,14 +10,14 @@ Two pieces live here:
 
 2. The ``_dispatch_contextual_job`` function: a module-level dispatcher that
    APScheduler invokes for worker_init jobs. It lazy-builds the init object on
-   first call (cached per job_name, thread-safe via a lock) and injects it as
-   ``gp_context`` into the job function at call time. The loader registers this
-   function as ``job.func`` and passes the per-job dotpaths + job_name +
-   ``gp_globals`` as leading positional args (all picklable); the func and init
-   are re-resolved by dotted path at call time via the registry. A module-level
-   function (not a callable instance) is required so APScheduler's
-   ``obj_to_ref``/``ref_to_obj`` round-trip survives the process-pool pickle
-   path.
+   first call (cached per ``(scheduler_token, job_name)``, thread-safe via a
+   lock) and injects it as ``gp_context`` into the job function at call time.
+   The loader registers this function as ``job.func`` and passes the scheduler
+   token + per-job dotpaths + job_name + ``gp_globals`` as leading positional
+   args (all picklable); the func and init are re-resolved by dotted path at
+   call time via the registry. A module-level function (not a callable instance)
+   is required so APScheduler's ``obj_to_ref``/``ref_to_obj`` round-trip
+   survives the process-pool pickle path.
 """
 
 from __future__ import annotations
@@ -87,30 +87,67 @@ GP_CONTEXT_KEY = "gp_context"
 #: Sentinel distinguishing "not yet cached" from a cached None return value.
 _CACHE_MISS = object()
 
-#: Module-level cache: job_name -> init object. On the thread side this lives in
+#: Module-level cache keyed by (scheduler_token, job_name) -> init object. The
+#: token is a per-GPScheduler UUID hex string (see GPScheduler.__init__), so two
+#: schedulers in the same process with a job of the same name do NOT alias each
+#: other's cached worker_init objects. On the thread side this cache lives in
 #: the main process; after spawn each worker process has its own fresh module
-#: state, so the cache is naturally per-worker.
-_context_cache: dict[str, object] = {}
+#: state, so the cache is naturally per-worker. A None token is the legacy/no-
+#: scheduler-context key (used by the loader when no scheduler is present, e.g.
+#: in tests) and still participates in the (None, job_name) tuple.
+_context_cache: dict[tuple[str | None, str], object] = {}
+#: Ownership map: token -> set of job_names whose cache entries belong to that
+#: scheduler. Populated lazily as _get_or_create_context stores objects; used by
+#: _clear_owned_keys (called from GPScheduler.shutdown) to remove only this
+#: scheduler's entries without touching a co-resident scheduler's.
+_owned_keys_by_token: dict[str | None, set[str]] = {}
 _context_lock = threading.Lock()
+
+
+def _register_owned_key(token: str | None, job_name: str) -> None:
+    """Record that ``(token, job_name)`` is owned by ``token``'s scheduler.
+
+    Called under _context_lock after a successful cache store, so the ownership
+    map and the cache stay in sync without a second lock acquisition.
+    """
+    _owned_keys_by_token.setdefault(token, set()).add(job_name)
+
+
+def _clear_owned_keys(token: str | None) -> None:
+    """Remove all cache entries owned by ``token`` (called from shutdown).
+
+    Idempotent: a no-op if ``token`` owns no entries. Clears both the cache and
+    the ownership-map slot for ``token``. Co-resident schedulers' entries (under
+    other tokens) are left untouched.
+    """
+    with _context_lock:
+        job_names = _owned_keys_by_token.pop(token, set())
+        for name in job_names:
+            _context_cache.pop((token, name), None)
 
 
 def _get_or_create_context(
     job_name: str,
     worker_init_dotpath: str,
     gp_globals: dict[str, Any] | None = None,
+    *,
+    context_cache_token: str | None = None,
 ) -> object:
-    """Return the cached init object for ``job_name``, building it on first miss.
+    """Return the cached init object for ``(token, job_name)``, building it on miss.
 
     Thread-safe via _context_lock. If the init function raises, the result is NOT
-    cached — the next call retries.
+    cached — the next call retries. The cache key is the ``(token, job_name)``
+    tuple, so two GPScheduler instances with a same-named job but different
+    worker_init functions get distinct cache entries (logic.03, Option A).
     """
+    key: tuple[str | None, str] = (context_cache_token, job_name)
     # Fast path: already cached.
-    cached = _context_cache.get(job_name, _CACHE_MISS)
+    cached = _context_cache.get(key, _CACHE_MISS)
     if cached is not _CACHE_MISS:
         return cached
     with _context_lock:
         # Re-check inside the lock (another thread may have built it).
-        cached = _context_cache.get(job_name, _CACHE_MISS)
+        cached = _context_cache.get(key, _CACHE_MISS)
         if cached is not _CACHE_MISS:
             return cached
         init_func = registry.get_init(worker_init_dotpath)
@@ -119,11 +156,13 @@ def _get_or_create_context(
         if "gp_globals" in inspect.signature(init_func).parameters and gp_globals is not None:
             init_kwargs["gp_globals"] = gp_globals
         obj = init_func(**init_kwargs)  # raises propagate; not cached on failure
-        _context_cache[job_name] = obj
+        _context_cache[key] = obj
+        _register_owned_key(context_cache_token, job_name)
         return obj
 
 
 def _dispatch_contextual_job(
+    context_cache_token: str | None,
     func_dotpath: str,
     worker_init_dotpath: str,
     job_name: str,
@@ -141,21 +180,30 @@ def _dispatch_contextual_job(
     function as ``job.func`` and passes the per-job dotpaths + job_name +
     ``gp_globals`` as leading positional args (all picklable: strings + dict).
 
-    On each call: lazy-builds the init object (cached per job_name, thread-safe),
-    injects it as ``gp_context``, re-resolves the job func by dotpath, and calls
-    it. The func/init are re-resolved from the registry at call time — in a
-    spawned worker, the process-pool initializer has re-imported ``packages`` so
-    the registry is populated.
+    ``context_cache_token`` is the owning scheduler's UUID hex string; it leads
+    the args so the cache key ``(token, job_name)`` isolates worker_init objects
+    per scheduler (logic.03, Option A). It is a plain string, so it pickles
+    cleanly into spawned worker processes where the scheduler object itself does
+    not exist.
+
+    On each call: lazy-builds the init object (cached per (token, job_name),
+    thread-safe), injects it as ``gp_context``, re-resolves the job func by
+    dotpath, and calls it. The func/init are re-resolved from the registry at
+    call time — in a spawned worker, the process-pool initializer has re-imported
+    ``packages`` so the registry is populated.
     """
     if GP_CONTEXT_KEY in kwargs:
         # Load-time guard should prevent this, but defend at runtime too.
         raise ReservedKeyError(f"{GP_CONTEXT_KEY!r} is reserved and must not be passed directly")
-    ctx = _get_or_create_context(job_name, worker_init_dotpath, gp_globals)
+    ctx = _get_or_create_context(
+        job_name, worker_init_dotpath, gp_globals, context_cache_token=context_cache_token
+    )
     kwargs[GP_CONTEXT_KEY] = ctx
     func = registry.get(func_dotpath)
     return func(*args, **kwargs)
 
 
 def _reset_cache_for_test() -> None:
-    """Test helper: clear the module-level context cache."""
+    """Test helper: clear the module-level context cache and ownership map."""
     _context_cache.clear()
+    _owned_keys_by_token.clear()

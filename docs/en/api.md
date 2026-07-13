@@ -418,6 +418,12 @@ scheduler.shutdown()
 
 ### Things to know when embedding
 
+- **One scheduler per process is recommended.** gpscheduler supports multiple
+  `GPScheduler` instances in the same process (each gets an isolated `worker_init`
+  cache, so they won't cross-contaminate runtime objects), but for the simplest
+  mental model we recommend one scheduler per process. If you do run multiple
+  instances, give their jobs distinct ids to keep logs and events easy to tell
+  apart.
 - **Don't block the host.** Use `start()` (non-blocking) for embedded use, not `run()`
   or [`run_scheduler`](#run_scheduler) — those block the calling thread and are meant
   for the standalone CLI pattern where the scheduler *is* the whole process.

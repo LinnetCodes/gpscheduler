@@ -178,8 +178,8 @@ def test_dispatch_survives_obj_to_ref_roundtrip() -> None:
 def test_dispatch_injects_gp_context_once() -> None:
     """First call runs init; second call reuses the cached object."""
     _reset_cache_for_test()
-    r1 = _dispatch_contextual_job(_JOB_DOT, _INIT_DOT, "job_b", None, 1)
-    r2 = _dispatch_contextual_job(_JOB_DOT, _INIT_DOT, "job_b", None, 2)
+    r1 = _dispatch_contextual_job("test-token", _JOB_DOT, _INIT_DOT, "job_b", None, 1)
+    r2 = _dispatch_contextual_job("test-token", _JOB_DOT, _INIT_DOT, "job_b", None, 2)
     # Same cached list object, both appends visible — proves reuse, not rebuild.
     assert r1 is r2
     assert r2 == [42, 1, 2]
@@ -197,8 +197,8 @@ def test_dispatch_per_job_isolation() -> None:
     _reg.register(_other_job)
     try:
         other_dot = f"{_other_job.__module__}.{_other_job.__qualname__}"
-        ra = _dispatch_contextual_job(_JOB_DOT, _INIT_DOT, "iso_a", None, 1)
-        rb = _dispatch_contextual_job(other_dot, _INIT_DOT, "iso_b", None)
+        ra = _dispatch_contextual_job("test-token", _JOB_DOT, _INIT_DOT, "iso_a", None, 1)
+        rb = _dispatch_contextual_job("test-token", other_dot, _INIT_DOT, "iso_b", None)
         assert ra is not rb
     finally:
         _reg._functions.pop(  # type: ignore[attr-defined]
@@ -221,6 +221,7 @@ def test_dispatch_injects_gp_globals_into_init() -> None:
         job_dot = f"{_job_needing_ctx.__module__}.{_job_needing_ctx.__qualname__}"
         init_dot = f"{_capturing_init.__module__}.{_capturing_init.__qualname__}"
         result = _dispatch_contextual_job(
+            "test-token",
             job_dot,
             init_dot,
             "gp_globals_test",
@@ -248,11 +249,119 @@ def test_dispatch_none_returning_init_runs_once() -> None:
     try:
         job_dot = f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}"
         init_dot = f"{_none_init.__module__}.{_none_init.__qualname__}"
-        _dispatch_contextual_job(job_dot, init_dot, "none_init_test", None)
-        _dispatch_contextual_job(job_dot, init_dot, "none_init_test", None)
-        _dispatch_contextual_job(job_dot, init_dot, "none_init_test", None)
+        _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
+        _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
+        _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
         assert _none_init_call_count[0] == 1  # init ran exactly once despite returning None
     finally:
         _reg._functions.pop(  # type: ignore[attr-defined]
             f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}", None
         )
+
+
+# --- per-scheduler cache isolation (token-keyed cache) ---------------------
+#
+# The module-level _context_cache is keyed by (token, job_name) so that two
+# GPScheduler instances in the same process (each with its own worker_init
+# functions) do NOT alias each other's cached objects, and so that
+# shutdown() of one scheduler clears only its own entries.
+
+
+@worker_init
+def _init_alpha() -> dict[str, str]:
+    return {"which": "ALPHA"}
+
+
+@worker_init
+def _init_beta() -> dict[str, str]:
+    return {"which": "BETA"}
+
+
+_ALPHA_DOT = f"{_init_alpha.__module__}.{_init_alpha.__qualname__}"
+_BETA_DOT = f"{_init_beta.__module__}.{_init_beta.__qualname__}"
+
+
+def test_cross_scheduler_isolation_via_tokens() -> None:
+    """Two tokens + same job_name + different inits must NOT alias (logic.03 Option A)."""
+    _reset_cache_for_test()
+    from gpscheduler.context import _get_or_create_context
+
+    obj_a = _get_or_create_context("shared", _ALPHA_DOT, context_cache_token="tok-a")
+    obj_b = _get_or_create_context("shared", _BETA_DOT, context_cache_token="tok-b")
+    assert obj_a is not obj_b  # not aliased
+    assert obj_a == {"which": "ALPHA"}
+    assert obj_b == {"which": "BETA"}
+
+
+_same_token_call_count = [0]
+
+
+@worker_init
+def _counting_init() -> dict[str, int]:
+    _same_token_call_count[0] += 1
+    return {"ran": _same_token_call_count[0]}
+
+
+_COUNTING_DOT = f"{_counting_init.__module__}.{_counting_init.__qualname__}"
+
+
+def test_same_token_caches_init_once() -> None:
+    """Same token + same job_name + same init: init runs exactly once, object reused."""
+    _reset_cache_for_test()
+    _same_token_call_count[0] = 0
+    from gpscheduler.context import _get_or_create_context
+
+    first = _get_or_create_context("once-job", _COUNTING_DOT, context_cache_token="tok-x")
+    second = _get_or_create_context("once-job", _COUNTING_DOT, context_cache_token="tok-x")
+    assert first is second
+    assert _same_token_call_count[0] == 1
+
+
+_fail_once_state = {"calls": 0}
+
+
+@worker_init
+def _flaky_init() -> str:
+    _fail_once_state["calls"] += 1
+    if _fail_once_state["calls"] == 1:
+        raise RuntimeError("boom on first call")
+    return "ok-after-retry"
+
+
+_FLAKY_DOT = f"{_flaky_init.__module__}.{_flaky_init.__qualname__}"
+
+
+def test_init_failure_not_cached_under_token() -> None:
+    """A first-call failure must not be cached; the second call succeeds (existing contract)."""
+    _reset_cache_for_test()
+    _fail_once_state["calls"] = 0
+    from gpscheduler.context import _get_or_create_context
+
+    with pytest.raises(RuntimeError, match="boom on first call"):
+        _get_or_create_context("flaky-job", _FLAKY_DOT, context_cache_token="tok-f")
+    # Second call succeeds and returns the object (failure was not cached).
+    result = _get_or_create_context("flaky-job", _FLAKY_DOT, context_cache_token="tok-f")
+    assert result == "ok-after-retry"
+
+
+def test_clear_owned_keys_clears_only_owners_entries() -> None:
+    """_clear_owned_keys(token) removes that token's entries, leaving others intact (Option C)."""
+    _reset_cache_for_test()
+    from gpscheduler.context import (
+        _clear_owned_keys,
+        _context_cache,  # for direct introspection
+        _get_or_create_context,
+    )
+
+    # Populate: two entries under T1, one under T2 (shared job_name between them
+    # to also prove the tuple key distinguishes them).
+    _get_or_create_context("job1", _ALPHA_DOT, context_cache_token="T1")
+    _get_or_create_context("job2", _BETA_DOT, context_cache_token="T1")
+    _get_or_create_context("job1", _BETA_DOT, context_cache_token="T2")
+
+    _clear_owned_keys("T1")
+
+    # T1's entries gone, T2's remain.
+    assert ("T1", "job1") not in _context_cache
+    assert ("T1", "job2") not in _context_cache
+    assert ("T2", "job1") in _context_cache

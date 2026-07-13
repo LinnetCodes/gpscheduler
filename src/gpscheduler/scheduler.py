@@ -14,6 +14,7 @@ import os
 import signal
 import threading
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import gpclog
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
@@ -23,6 +24,7 @@ from gpconfig import GPConfigFolder, GPConfigManager, GPConfigurable
 from gpconfig.exceptions import GPConfigError
 from loguru import logger as loguru_logger
 
+from gpscheduler import context
 from gpscheduler.config import GPSchedulerConfig
 from gpscheduler.exceptions import ConfigError
 from gpscheduler.loader import _default_import_packages, load_jobs
@@ -113,6 +115,13 @@ class GPScheduler(GPConfigurable):
         self._scheduler: BackgroundScheduler = self._build_scheduler()
         self._stop_event: threading.Event = threading.Event()
         self._started = False
+        # Per-scheduler UUID token used as the leading half of the worker_init
+        # cache key (logic.03, Option A). A fresh hex string per instance means
+        # two GPScheduler instances with a same-named job get isolated cache
+        # entries, and rebuild-after-shutdown cannot pick up a stale cached
+        # object. A str (not id(self)) so it pickles cleanly into spawned worker
+        # processes where the scheduler object does not exist.
+        self._context_cache_token: str = uuid4().hex
         # max_runs counting (ADR-0016).
         self._run_counts: dict[str, int] = {}
         self._job_max_runs: dict[str, int | None] = {}
@@ -190,6 +199,11 @@ class GPScheduler(GPConfigurable):
                     "(running jobs may be interrupted)"
                 )
                 self._scheduler.shutdown(wait=False)
+        # Drop this scheduler's worker_init cache entries (logic.03, Option C).
+        # In the main process this keeps a rebuild-from-new-config from reusing
+        # a stale cached object; in spawned workers each worker owns its own
+        # module state so this clear is process-local and harmless there.
+        context._clear_owned_keys(self._context_cache_token)
         self._started = False
 
     def run(self) -> None:
@@ -307,6 +321,7 @@ def create_scheduler(
             manager=manager,
             registry=_get_registry(),
             sched_config=sched_config,
+            context_cache_token=scheduler._context_cache_token,
         )
     except GPConfigError as e:
         raise ConfigError(f"failed to load jobs: {e}") from e
