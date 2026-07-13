@@ -71,6 +71,12 @@ def _validate_worker_init_contract(func: Callable[..., Any]) -> None:
             "not a nested function or lambda."
         )
 
+    if "." in qualname:
+        raise SignatureContractError(
+            f"{func.__name__!r}: @worker_init requires a module-level function, "
+            "not a class-body function or method (ADR-0003)."
+        )
+
     module = inspect.getmodule(func)
     if module is None:
         raise SignatureContractError(f"{func!r}: could not resolve a defining module.")

@@ -54,6 +54,12 @@ def _validate_signature_contract(func: Callable[..., Any]) -> None:
             "not a nested function or lambda (ADR-0003)."
         )
 
+    if "." in qualname:
+        raise SignatureContractError(
+            f"{func.__name__!r}: @scheduled requires a module-level function, "
+            "not a class-body function or method (ADR-0003)."
+        )
+
     # Belt-and-suspenders: the defining module must own this function.
     module = inspect.getmodule(func)
     if module is None:

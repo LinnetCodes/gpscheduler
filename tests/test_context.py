@@ -49,6 +49,42 @@ def test_worker_init_rejects_nested_function() -> None:
         _outer()
 
 
+# --- class-body functions and methods (qualname contains ".") -----------------
+# ADR-0003 promises module-level plain functions only. A function defined in a
+# class body has __qualname__ like "C.m" — the "." distinguishes it from a true
+# module-level function and must be rejected (gap.02).
+
+
+class _ClassBodyHolder:
+    def method(self) -> object:
+        return object()
+
+    @staticmethod
+    def static_method() -> object:
+        return object()
+
+
+@pytest.mark.parametrize(
+    ("label", "func"),
+    [
+        # 1. A function defined directly in a class body (accessed via the class,
+        #    a plain function whose __qualname__ is "_ClassBodyHolder.method").
+        ("class-body-function", _ClassBodyHolder.method),
+        # 2. A staticmethod (accessed via the class, a plain function whose
+        #    __qualname__ is "_ClassBodyHolder.static_method").
+        ("staticmethod", _ClassBodyHolder.static_method),
+        # 3. A bound instance method (already caught by the non-function check;
+        #    included as a regression guard for the refactor in structure.01).
+        ("bound-instance-method", _ClassBodyHolder().method),
+    ],
+    ids=["class-body-function", "staticmethod", "bound-instance-method"],
+)
+def test_worker_init_rejects_class_body_function_and_method(label: str, func: Any) -> None:
+    """@worker_init must reject class-body functions and methods (gap.02)."""
+    with pytest.raises(SignatureContractError):
+        worker_init(func)  # type: ignore[arg-type]
+
+
 def test_worker_init_rejects_gp_context_parameter() -> None:
     with pytest.raises(SignatureContractError):
 
