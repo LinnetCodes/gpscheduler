@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -366,6 +368,151 @@ def test_clear_owned_keys_clears_only_owners_entries() -> None:
     assert ("T1", "job1") not in _context_cache
     assert ("T1", "job2") not in _context_cache
     assert ("T2", "job1") in _context_cache
+
+
+# --- per-key locking: unrelated jobs init in parallel (perf.01) -------------
+#
+# perf.01: _get_or_create_context must NOT serialize unrelated jobs. Two jobs
+# with different (token, job_name) keys and slow initializers must run
+# concurrently — total wall time ~= one init, not two. Previously a single
+# module-level _context_lock was held THROUGH the init call, serializing every
+# initializer. The fix uses per-key locks so only same-key calls serialize
+# (which is REQUIRED to prevent double-initialization of one cache slot).
+
+
+@worker_init
+def _slow_init_alpha() -> dict[str, str]:
+    # ~0.3s init simulating an expensive resource setup (DB pool, model load).
+    time.sleep(0.3)
+    return {"which": "ALPHA", "thread": threading.current_thread().name}
+
+
+@worker_init
+def _slow_init_beta() -> dict[str, str]:
+    time.sleep(0.3)
+    return {"which": "BETA", "thread": threading.current_thread().name}
+
+
+_SLOW_ALPHA_DOT = f"{_slow_init_alpha.__module__}.{_slow_init_alpha.__qualname__}"
+_SLOW_BETA_DOT = f"{_slow_init_beta.__module__}.{_slow_init_beta.__qualname__}"
+
+
+def test_unrelated_jobs_initialize_in_parallel() -> None:
+    """perf.01: two different (token, job_name) keys with slow inits run concurrently.
+
+    Each init sleeps ~0.3s. If they serialize (old single-lock behavior), total
+    wall time ~= 0.6s. If they run in parallel (per-key locks), total wall time
+    ~= 0.3s. Assert < 0.55s to clearly distinguish parallel from serial while
+    allowing thread-scheduling overhead.
+    """
+    _reset_cache_for_test()
+    from gpscheduler.context import _get_or_create_context
+
+    results: dict[str, object] = {}
+    errors: list[BaseException] = []
+
+    def _run_alpha() -> None:
+        try:
+            results["alpha"] = _get_or_create_context(
+                "job-alpha", _SLOW_ALPHA_DOT, context_cache_token="tok-parallel-a"
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def _run_beta() -> None:
+        try:
+            results["beta"] = _get_or_create_context(
+                "job-beta", _SLOW_BETA_DOT, context_cache_token="tok-parallel-b"
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    start = time.monotonic()
+    t_alpha = threading.Thread(target=_run_alpha, name="alpha-thread")
+    t_beta = threading.Thread(target=_run_beta, name="beta-thread")
+    t_alpha.start()
+    t_beta.start()
+    t_alpha.join()
+    t_beta.join()
+    elapsed = time.monotonic() - start
+
+    assert not errors, f"threads spawned errors: {errors}"
+    # Distinct keys -> distinct cached objects.
+    assert results["alpha"] != results["beta"]
+    # The core assertion: parallel, not serial. Serial would be ~0.6s; we allow
+    # up to 0.55s for scheduling jitter but well below the 2x serial cost.
+    assert elapsed < 0.55, (
+        f"Expected parallel init (<<2x single-init), but took {elapsed:.3f}s "
+        "(serialization suspected: single lock held through init)."
+    )
+
+
+# Same-key concurrency must STILL serialize so two simultaneous calls for the
+# same cache slot do not double-initialize. Guards against over-correcting the
+# perf.01 fix and breaking the original cache-once contract.
+_same_key_call_count = [0]
+_same_key_barrier: threading.Barrier  # set inside the test (2 = wait for both threads)
+
+
+@worker_init
+def _counting_init_concurrent() -> dict[str, int]:
+    # Signal we entered the init, then sleep a beat so a racing thread has time
+    # to also reach _get_or_create_context before we finish + cache.
+    _same_key_call_count[0] += 1
+    time.sleep(0.2)
+    return {"ran": _same_key_call_count[0]}
+
+
+_COUNTING_CONCURRENT_DOT = (
+    f"{_counting_init_concurrent.__module__}.{_counting_init_concurrent.__qualname__}"
+)
+
+
+def test_same_key_concurrency_still_serializes() -> None:
+    """Two threads, SAME key: init runs exactly once (per-key lock serializes).
+
+    Both threads call _get_or_create_context for the same (token, job_name).
+    Without per-key serialization, both would miss the cache and each run the
+    init (count == 2). The per-key lock ensures one waits, then sees the cached
+    result via re-check (count == 1).
+    """
+    _reset_cache_for_test()
+    _same_key_call_count[0] = 0
+    from gpscheduler.context import _get_or_create_context
+
+    # Barrier so both threads hit _get_or_create_context at ~the same instant,
+    # maximizing the chance both observe a cold cache simultaneously.
+    global _same_key_barrier  # noqa: PLW0603
+    _same_key_barrier = threading.Barrier(2)
+
+    results: list[object] = [None, None]
+    errors: list[BaseException] = []
+
+    def _run(idx: int) -> None:
+        try:
+            _same_key_barrier.wait(timeout=5)
+            results[idx] = _get_or_create_context(
+                "shared-job", _COUNTING_CONCURRENT_DOT, context_cache_token="tok-same"
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    t0 = threading.Thread(target=_run, args=(0,))
+    t1 = threading.Thread(target=_run, args=(1,))
+    t0.start()
+    t1.start()
+    t0.join()
+    t1.join()
+
+    assert not errors, f"threads raised: {errors}"
+    # The initializer ran exactly once despite two concurrent callers.
+    assert _same_key_call_count[0] == 1, (
+        f"Expected init to run once (per-key lock serializes same key), "
+        f"but ran {_same_key_call_count[0]} times (double-init bug)."
+    )
+    # Both callers got the SAME cached object.
+    assert results[0] is results[1]
+    assert results[0] == {"ran": 1}
 
 
 # --- end-to-end wiring through real GPScheduler instances --------------------

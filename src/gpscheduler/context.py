@@ -103,27 +103,44 @@ _context_cache: dict[tuple[str | None, str], object] = {}
 _owned_keys_by_token: dict[str | None, set[str]] = {}
 _context_lock = threading.Lock()
 
+#: Per-key locks for worker_init initializers. Keyed by (token, job_name),
+#: matching the cache key (logic.03). Different keys proceed in parallel; the
+#: same key serializes to prevent double-init of one cache slot (perf.01).
+#: Per-key locks are get-or-created under the short global _context_lock below.
+_context_locks: dict[tuple[str | None, str], threading.Lock] = {}
+
 
 def _register_owned_key(token: str | None, job_name: str) -> None:
     """Record that ``(token, job_name)`` is owned by ``token``'s scheduler.
 
-    Called under _context_lock after a successful cache store, so the ownership
-    map and the cache stay in sync without a second lock acquisition.
+    Acquires _context_lock internally so the ownership map and the cache stay in
+    sync. Callers do NOT need to hold _context_lock (the previous contract had
+    callers hold it because they were already inside the single critical section
+    that ran the init; with per-key locking the init runs under a per-key lock,
+    so this function takes _context_lock itself for the brief ownership update).
     """
-    _owned_keys_by_token.setdefault(token, set()).add(job_name)
+    with _context_lock:
+        _owned_keys_by_token.setdefault(token, set()).add(job_name)
 
 
 def _clear_owned_keys(token: str | None) -> None:
     """Remove all cache entries owned by ``token`` (called from shutdown).
 
-    Idempotent: a no-op if ``token`` owns no entries. Clears both the cache and
-    the ownership-map slot for ``token``. Co-resident schedulers' entries (under
-    other tokens) are left untouched.
+    Idempotent: a no-op if ``token`` owns no entries. Clears the cache, the
+    ownership-map slot, AND the per-key locks for ``token``'s entries (so the
+    lock map does not grow unboundedly across scheduler lifecycles). Co-resident
+    schedulers' entries (under other tokens) are left untouched.
+
+    Lock cleanup ordering note: popping a per-key lock here is safe even if
+    another thread concurrently holds a reference to it from the get-or-create
+    section — that thread will finish on the orphaned lock; new calls create a
+    fresh lock. No correctness issue, just a momentary extra lock object.
     """
     with _context_lock:
         job_names = _owned_keys_by_token.pop(token, set())
         for name in job_names:
             _context_cache.pop((token, name), None)
+            _context_locks.pop((token, name), None)
 
 
 def _get_or_create_context(
@@ -135,18 +152,41 @@ def _get_or_create_context(
 ) -> object:
     """Return the cached init object for ``(token, job_name)``, building it on miss.
 
-    Thread-safe via _context_lock. If the init function raises, the result is NOT
-    cached — the next call retries. The cache key is the ``(token, job_name)``
-    tuple, so two GPScheduler instances with a same-named job but different
-    worker_init functions get distinct cache entries (logic.03, Option A).
+    Thread-safe via per-key lock; different ``(token, job_name)`` keys initialize
+    in parallel, same key serializes (prevents double-init of one cache slot).
+    The per-key lock is get-or-created under a short global guard (_context_lock)
+    whose critical section is just a dict lookup; the user's init function runs
+    UNDER THE PER-KEY LOCK, NOT under _context_lock (perf.01). If the init
+    function raises, the result is NOT cached — the next call retries. The cache
+    key is the ``(token, job_name)`` tuple, so two GPScheduler instances with a
+    same-named job but different worker_init functions get distinct cache entries
+    AND distinct per-key locks (logic.03, Option A).
     """
     key: tuple[str | None, str] = (context_cache_token, job_name)
-    # Fast path: already cached.
+    # Fast path: already cached (dict.get is atomic for reads).
     cached = _context_cache.get(key, _CACHE_MISS)
     if cached is not _CACHE_MISS:
         return cached
+
+    # Get-or-create the per-key lock under the SHORT GLOBAL GUARD. The critical
+    # section is tiny (dict lookup + maybe Lock() construction). We deliberately
+    # do NOT use dict.setdefault(key, Lock()) — that constructs a Lock on every
+    # call even when one already exists, and (more importantly) the get-then-set
+    # split is clearer about the intent and avoids any ambiguity around Lock
+    # identity if two threads raced the setdefault (each would build a Lock,
+    # setdefault keeps one, the other is orphaned).
     with _context_lock:
-        # Re-check inside the lock (another thread may have built it).
+        per_key_lock = _context_locks.get(key)
+        if per_key_lock is None:
+            per_key_lock = threading.Lock()
+            _context_locks[key] = per_key_lock
+
+    # Run the initializer UNDER THE PER-KEY LOCK, not _context_lock. Different
+    # keys proceed in parallel; the same key serializes (one waits, then sees
+    # the cached result via the re-check below).
+    with per_key_lock:
+        # Re-check inside the per-key lock (another thread for the SAME key may
+        # have just built and cached it).
         cached = _context_cache.get(key, _CACHE_MISS)
         if cached is not _CACHE_MISS:
             return cached
@@ -157,6 +197,8 @@ def _get_or_create_context(
             init_kwargs["gp_globals"] = gp_globals
         obj = init_func(**init_kwargs)  # raises propagate; not cached on failure
         _context_cache[key] = obj
+        # Ownership tracking stays consistent with _clear_owned_keys (which also
+        # takes _context_lock). _register_owned_key acquires _context_lock itself.
         _register_owned_key(context_cache_token, job_name)
         return obj
 
@@ -204,6 +246,7 @@ def _dispatch_contextual_job(
 
 
 def _reset_cache_for_test() -> None:
-    """Test helper: clear the module-level context cache and ownership map."""
+    """Test helper: clear the module-level context cache, ownership map, and per-key locks."""
     _context_cache.clear()
     _owned_keys_by_token.clear()
+    _context_locks.clear()
