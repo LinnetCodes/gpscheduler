@@ -31,6 +31,13 @@ job.executor  →  scheduler.executor  →  "thread"
 单个 `max_workers` 值独立应用于**两个**池 —— 线程池最多可容纳 `max_workers` 个并发线程 job，
 进程池最多可容纳 `max_workers` 个并发进程 job。它们是独立的池。
 
+### 按 job 的执行计数器
+
+调度器为每个注册的 job 保留一个内存中的执行计数器（覆盖**所有** job，不只是带 `max_runs` 上限
+的那些），存续于 `GPScheduler` 实例的整个生命周期。这些计数器用于可观测性 —— 它们不会随每次执行
+而增长（最多只是 Python int 的重新绑定）—— 并被固定的已注册 job id 集合所限定。移除一个 job **不**
+会清除它的计数器。
+
 ## 可 pickle 约束（进程 job）
 
 进程 job 运行在**派生的 worker 进程**中，这意味着它们的参数要跨进程边界。因此，对任何

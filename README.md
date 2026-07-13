@@ -4,7 +4,6 @@
 [![Python](https://img.shields.io/pypi/pyversions/gpscheduler.svg)](https://pypi.org/project/gpscheduler/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://linnetcodes.github.io/gpscheduler/)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/LinnetCodes/gpscheduler/actions)
 
 **GPScheduler** (General-Purpose Scheduler) is a cron-style Python scheduler that turns
 functions from any package into scheduled jobs via config files, configures startup

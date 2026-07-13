@@ -34,6 +34,14 @@ A single `max_workers` value applies to **both** pools independently — the thr
 can hold up to `max_workers` concurrent thread jobs, and the process pool can hold up to
 `max_workers` concurrent process jobs. They are separate pools.
 
+### Per-job execution counters
+
+The scheduler retains an in-memory execution counter for each registered job (covering
+**all** jobs, not just those with a `max_runs` cap) for the lifetime of the
+`GPScheduler` instance. These counters exist for observability — they do not grow
+per-execution beyond a Python int rebind — and are bounded by the fixed set of
+registered job ids. Removing a job does **not** clear its counter.
+
 ## The picklability constraint (process jobs)
 
 Process jobs run in **spawned worker processes**, which means their arguments must

@@ -4,7 +4,6 @@
 [![Python](https://img.shields.io/pypi/pyversions/gpscheduler.svg)](https://pypi.org/project/gpscheduler/)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![文档](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://linnetcodes.github.io/gpscheduler/zh/)
-[![构建](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/LinnetCodes/gpscheduler/actions)
 
 **GPScheduler**（通用调度器，General-Purpose Scheduler）是一个 cron 风格的 Python 调度器。
 它通过配置文件把任意包中的函数转化为定时任务，可为任务配置启动参数，并提供装饰器来标记可被调度的函数。

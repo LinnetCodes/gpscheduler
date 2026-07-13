@@ -69,7 +69,7 @@ class PackageImportError(ConfigError):
 
 
 class ReservedKeyError(ConfigError):
-    """A job's kwargs used the reserved key ``gp_globals`` (ADR-0006)."""
+    """A job's kwargs used a reserved key (``gp_globals`` or ``gp_context``)."""
 
 
 class MaxRunsError(ConfigError):
