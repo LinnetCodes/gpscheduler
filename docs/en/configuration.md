@@ -82,10 +82,10 @@ job id.
 | `cron` | `str` | *(required)* | 5- or 6-segment cron expression. See [cron format](#cron-format). |
 | `args` | `list` | `[]` | Positional arguments, bound left-to-right. |
 | `kwargs` | `dict` | `{}` | Keyword arguments. Must **not** contain `gp_globals` or `gp_context`. |
-| `executor` | `"thread" \| "process"` | *(scheduler default)* | Per-job executor override. |
+| `executor` | `"thread" \| "process" \| None` | `None` | Per-job executor override. `None` falls back to the scheduler default. |
 | `enable` | `bool` | `True` | `False` = validate but don't register. See [enable semantics](#enable-semantics). |
-| `worker_init` | `str` | *(none)* | Dotted path to a `@worker_init` function. See [API → worker_init](api.md#worker_init). |
-| `max_runs` | `int \| null` | `null` (unlimited) | Optional. Caps the number of times the job executes before being automatically removed from the scheduler. Must be a positive integer. See below. |
+| `worker_init` | `str \| None` | `None` | Dotted path to a `@worker_init` function. See [API → worker_init](api.md#worker_init). |
+| `max_runs` | `int \| null` | `None` | Optional. Caps the number of times the job executes before being automatically removed from the scheduler (`None` = unlimited). Must be a positive integer. See below. |
 
 **`func` is the decorator's registry key** — exactly `"{function.__module__}.{function.__qualname__}"`.
 For a module-level function `greet` in `myjobs/hello.py` (importable as `myjobs.hello`),

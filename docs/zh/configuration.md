@@ -75,10 +75,10 @@ job_globals:
 | `cron` | `str` | *(必填)* | 5 或 6 段 cron 表达式。见 [cron 格式](#cron-格式)。 |
 | `args` | `list` | `[]` | 位置参数，按从左到右绑定。 |
 | `kwargs` | `dict` | `{}` | 关键字参数。**不得**包含 `gp_globals` 或 `gp_context`。 |
-| `executor` | `"thread" \| "process"` | *(调度器默认)* | 单个 job 的 executor 覆盖。 |
+| `executor` | `"thread" \| "process" \| None` | `None` | 单个 job 的 executor 覆盖。`None` 回退到调度器默认。 |
 | `enable` | `bool` | `True` | `False` = 校验但不注册。见 [enable 语义](#enable-语义)。 |
-| `worker_init` | `str` | *(无)* | 指向 `@worker_init` 函数的 dotted path。见 [API → worker_init](api.md#worker_init)。 |
-| `max_runs` | `int \| null` | `null`（无限） | 可选。限制任务在被自动移出调度器前最多执行的次数。必须是正整数。见下文。 |
+| `worker_init` | `str \| None` | `None` | 指向 `@worker_init` 函数的 dotted path。见 [API → worker_init](api.md#worker_init)。 |
+| `max_runs` | `int \| null` | `None` | 可选。限制任务在被自动移出调度器前最多执行的次数（`None` = 无限）。必须是正整数。见下文。 |
 
 **`func` 就是装饰器的注册表键** —— 恰好是 `"{function.__module__}.{function.__qualname__}"`。对
 `myjobs/hello.py`（可导入为 `myjobs.hello`）中的模块级函数 `greet`，就是
