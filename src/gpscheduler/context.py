@@ -27,6 +27,7 @@ import threading
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from gpscheduler._contract import _WORKER_INIT, _validate_common_contract
 from gpscheduler.exceptions import ReservedKeyError, SignatureContractError
 from gpscheduler.registry import registry
 
@@ -53,33 +54,15 @@ def worker_init(func: F) -> F:
 
 
 def _validate_worker_init_contract(func: Callable[..., Any]) -> None:
-    """Enforce the worker_init signature contract + double-decoration prohibition."""
-    if inspect.iscoroutinefunction(func):
-        raise SignatureContractError(
-            f"{func.__name__!r}: async functions are not supported (worker_init)."
-        )
+    """Enforce the worker_init signature contract + double-decoration prohibition.
 
-    if not inspect.isfunction(func):
-        raise SignatureContractError(
-            f"{func!r}: @worker_init requires a plain function, not a method or callable instance."
-        )
-
-    qualname = getattr(func, "__qualname__", "")
-    if "<locals>" in qualname or "<lambda>" in qualname:
-        raise SignatureContractError(
-            f"{func.__name__!r}: @worker_init requires a module-level function, "
-            "not a nested function or lambda."
-        )
-
-    if "." in qualname:
-        raise SignatureContractError(
-            f"{func.__name__!r}: @worker_init requires a module-level function, "
-            "not a class-body function or method (ADR-0003)."
-        )
-
-    module = inspect.getmodule(func)
-    if module is None:
-        raise SignatureContractError(f"{func!r}: could not resolve a defining module.")
+    The five shared base checks (async, non-function, nested/lambda,
+    class-body/method via qualname, module-resolution) live in
+    :func:`gpscheduler._contract._validate_common_contract`; this function
+    keeps only the kind-specific tail — the no-gp_context rule and the
+    double-decoration ban against @scheduled.
+    """
+    _validate_common_contract(func, _WORKER_INIT)
 
     # worker_init must not declare gp_context (it produces the context, not consumes it).
     params = inspect.signature(func).parameters
