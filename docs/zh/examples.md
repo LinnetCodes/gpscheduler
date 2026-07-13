@@ -80,12 +80,13 @@ gpscheduler run --config configs
 ```
 4 enabled job(s):
   - cleanup: next run 2026-07-14 03:30:00+08:00 (max_runs: unlimited)
-  - compute_stats: next run 2026-07-13 21:06:40+08:00 (max_runs: unlimited)
-  - hello: next run 2026-07-13 21:06:34+08:00 (max_runs: 10)
-  - ping_db: next run 2026-07-13 21:06:35+08:00 (max_runs: unlimited)
+  - compute_stats: next run 2026-07-14 00:06:10+08:00 (max_runs: unlimited)
+  - hello: next run 2026-07-14 00:06:02+08:00 (max_runs: 10)
+  - ping_db: next run 2026-07-14 00:06:05+08:00 (max_runs: unlimited)
+1 disabled job(s) validated but not registered: maintenance
 ```
 
-`maintenance` 是 `enable: false`，所以它被校验但不出现在列表中。
+`maintenance` 是 `enable: false`，所以它被校验但不注册 —— 它出现在末尾的摘要行里，而不是上面的启用列表中。（时间戳为示意；`list-jobs` 根据每个 job 的 trigger 按当前时间计算。）
 
 ## 走读
 
