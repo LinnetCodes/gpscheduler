@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -365,3 +366,162 @@ def test_clear_owned_keys_clears_only_owners_entries() -> None:
     assert ("T1", "job1") not in _context_cache
     assert ("T1", "job2") not in _context_cache
     assert ("T2", "job1") in _context_cache
+
+
+# --- end-to-end wiring through real GPScheduler instances --------------------
+#
+# The unit tests above exercise _get_or_create_context / _clear_owned_keys
+# directly with synthetic tokens. The test below proves the actual wiring holds
+# end to end through two REAL GPScheduler instances built via create_scheduler:
+# that GPScheduler.__init__ generates a per-instance token that flows through
+# create_scheduler -> load_jobs(context_cache_token=...) into
+# _dispatch_contextual_job's leading positional arg (scheduler.py:320-325 /
+# loader.py:266-274), AND that GPScheduler.shutdown() really calls
+# context._clear_owned_keys (scheduler.py:206). This is the regression vector a
+# future refactor (e.g. dropping the context_cache_token= kwarg from the
+# load_jobs call inside create_scheduler) would silently break — none of the
+# unit tests above would surface such wiring breakage.
+
+
+@worker_init
+def _init_e2e_alpha() -> dict[str, str]:
+    # Distinguishable marker so the test can tell the two schedulers' objects
+    # apart even though they share the SAME job name.
+    return {"which": "ALPHA"}
+
+
+@worker_init
+def _init_e2e_beta() -> dict[str, str]:
+    return {"which": "BETA"}
+
+
+@scheduled
+def _job_e2e(*, gp_context: dict[str, str]) -> dict[str, str]:
+    """Job func that consumes gp_context; returns it so the test can assert identity.
+
+    Decorated with @scheduled so it self-registers into the process-global
+    registry at import, which is what create_scheduler's loader and the
+    _dispatch_contextual_job dispatcher both resolve against at call time.
+    """
+    return gp_context
+
+
+_JOB_E2E_DOT = f"{_job_e2e.__module__}.{_job_e2e.__qualname__}"
+_INIT_E2E_ALPHA_DOT = f"{_init_e2e_alpha.__module__}.{_init_e2e_alpha.__qualname__}"
+_INIT_E2E_BETA_DOT = f"{_init_e2e_beta.__module__}.{_init_e2e_beta.__qualname__}"
+
+
+def _write_cfg_folder(folder: Path, init_dot: str) -> None:
+    """Build a minimal cfg_folder: scheduler.yaml + jobs/shared.yaml.
+
+    Both schedulers register a job named 'shared' (same name, deliberate) but
+    point at different worker_init dotpaths so the two schedulers' cached init
+    objects must be distinguishable.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "global_env.yaml").write_text("project: gpscheduler_e2e\n", encoding="utf-8")
+    (folder / "scheduler.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\n"
+        "configured_class_name: GPScheduler\n"
+        "timezone: UTC\n"
+        "max_workers: 1\n",
+        encoding="utf-8",
+    )
+    (folder / "jobs").mkdir(exist_ok=True)
+    (folder / "jobs" / "shared.yaml").write_text(
+        "cfg_class_name: GPJobConfig\n"
+        f"func: {_JOB_E2E_DOT}\n"
+        "cron: '* * * * *'\n"
+        f"worker_init: {init_dot}\n",
+        encoding="utf-8",
+    )
+
+
+def test_end_to_end_cross_scheduler_cache_isolation_through_real_wiring(
+    tmp_path: Path,
+) -> None:
+    """Two real GPScheduler instances isolate worker_init cache end to end.
+
+    Drives the FULL create_scheduler pipeline (real GPConfigManager, real
+    load_jobs, real token threading at scheduler.py:324). Proves:
+      (a) scheduler._context_cache_token threads into the dispatcher's first
+          positional arg (effective_args[0]) — fails if create_scheduler drops
+          the context_cache_token= kwarg from its load_jobs call,
+      (b) two schedulers with the SAME job name but DIFFERENT inits do not alias,
+      (c) GPScheduler.shutdown() actually clears only the shut-down scheduler's
+          entries — fails if shutdown() drops the _clear_owned_keys call.
+    """
+    _reset_cache_for_test()
+
+    from gpscheduler.context import _context_cache, _dispatch_contextual_job
+    from gpscheduler.scheduler import create_scheduler
+
+    # Two separate cfg folders so each scheduler loads 'shared' against a
+    # different worker_init. tmp_path is pytest-managed and auto-cleaned.
+    folder_a = tmp_path / "cfg_a"
+    folder_b = tmp_path / "cfg_b"
+    _write_cfg_folder(folder_a, _INIT_E2E_ALPHA_DOT)
+    _write_cfg_folder(folder_b, _INIT_E2E_BETA_DOT)
+
+    # Build two REAL GPScheduler instances via the production create_scheduler
+    # entrypoint — this is the wiring (scheduler.py:312-329) under test. Each
+    # __init__ generates a fresh per-instance UUID token (scheduler.py:124).
+    sched_a = create_scheduler(cfg_folder=folder_a, project_name="gpscheduler_e2e")
+    sched_b = create_scheduler(cfg_folder=folder_b, project_name="gpscheduler_e2e")
+    token_a = sched_a._context_cache_token
+    token_b = sched_b._context_cache_token
+    # Sanity: distinct tokens are the precondition for isolation.
+    assert token_a != token_b
+
+    # Each scheduler registered exactly one job named 'shared'.
+    jobs_a = sched_a.get_jobs()
+    jobs_b = sched_b.get_jobs()
+    assert [j.id for j in jobs_a] == ["shared"]
+    assert [j.id for j in jobs_b] == ["shared"]
+
+    # (a) The token actually threaded into the dispatcher's first positional arg.
+    # APScheduler stores the packed args on the job; effective_args[0] is what
+    # _dispatch_contextual_job receives as context_cache_token. If
+    # create_scheduler stops passing context_cache_token=scheduler._context_cache_token
+    # to load_jobs, this defaults to None and the assertion fails.
+    assert jobs_a[0].args[0] == token_a
+    assert jobs_b[0].args[0] == token_b
+
+    # The registered func is the real module-level dispatcher (not the bare func).
+    assert jobs_a[0].func is _dispatch_contextual_job
+    assert jobs_b[0].func is _dispatch_contextual_job
+
+    # (b) Invoke each via the real dispatcher path (the args create_scheduler
+    # packed). Each call lazy-builds its own init object under its own
+    # (token, 'shared') cache key and injects it as gp_context. The returned dict
+    # must match its own initializer's output, and the two must NOT alias.
+    result_a = jobs_a[0].func(*jobs_a[0].args, **jobs_a[0].kwargs)
+    result_b = jobs_b[0].func(*jobs_b[0].args, **jobs_b[0].kwargs)
+
+    assert result_a == {"which": "ALPHA"}
+    assert result_b == {"which": "BETA"}
+    assert result_a is not result_b  # no cross-scheduler aliasing
+
+    # Both cache entries are now populated under their respective (token, 'shared')
+    # keys — proving the dispatcher used the threaded token, not a shared job_name.
+    assert (token_a, "shared") in _context_cache
+    assert (token_b, "shared") in _context_cache
+    assert _context_cache[(token_a, "shared")] == {"which": "ALPHA"}
+    assert _context_cache[(token_b, "shared")] == {"which": "BETA"}
+
+    # (c) GPScheduler.shutdown() must actually call context._clear_owned_keys
+    # (scheduler.py:206). shutdown() is a no-op until start() has been called, so
+    # start sched_a first. We deliberately do NOT shut down sched_b, so its cache
+    # entries must survive — proving _clear_owned_keys is token-scoped.
+    sched_a.start()
+    try:
+        sched_a.shutdown(timeout=5)
+    finally:
+        # Defensive: if shutdown timed out (shouldn't happen with no registered
+        # runs), make sure no background scheduler thread leaks into other tests.
+        if sched_a.running:
+            sched_a._scheduler.shutdown(wait=False)
+
+    # sched_a's entry cleared; sched_b's entry still present.
+    assert (token_a, "shared") not in _context_cache
+    assert (token_b, "shared") in _context_cache
