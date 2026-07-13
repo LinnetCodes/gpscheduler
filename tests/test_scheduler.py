@@ -349,6 +349,49 @@ def test_register_jobs_records_max_runs() -> None:
     assert s._job_max_runs == {"limited": 3, "unlimited": None}
 
 
+def test_get_job_max_runs_returns_configured_value() -> None:
+    """Public accessor ``get_job_max_runs`` returns the cap for a known job.
+
+    Replaces the cli's direct ``getattr(scheduler, "_job_max_runs", {})`` access,
+    whose silent fallback would mask all jobs as ``unlimited`` if the private
+    dict were renamed. The accessor is a method call, so a rename breaks loudly
+    at the call site instead. Structure.03.
+    """
+    from apscheduler.triggers.cron import CronTrigger
+
+    from gpscheduler.loader import LoadedJob
+
+    cfg = GPSchedulerConfig(timezone="UTC", max_workers=1)
+    s = GPScheduler(cfg)
+    trigger = CronTrigger.from_crontab("* * * * *")
+    loaded = [
+        LoadedJob(
+            name="hello",
+            func=_counter_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=10,
+        ),
+        LoadedJob(
+            name="unlimited",
+            func=_counter_task,
+            trigger=trigger,
+            args=[],
+            kwargs={},
+            executor="thread",
+            max_runs=None,
+        ),
+    ]
+    s.register_jobs(loaded)
+    assert s.get_job_max_runs("hello") == 10
+    assert s.get_job_max_runs("unlimited") is None
+    # Unknown id returns None — same surface as a no-cap job. Callers that need
+    # to distinguish must check get_jobs() first (documented in the docstring).
+    assert s.get_job_max_runs("unknown_id") is None
+
+
 def test_max_runs_removes_job_after_limit() -> None:
     """A job with max_runs=N is removed after exactly N executions."""
     from apscheduler.triggers.interval import IntervalTrigger

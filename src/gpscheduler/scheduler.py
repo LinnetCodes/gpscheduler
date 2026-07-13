@@ -163,6 +163,14 @@ class GPScheduler(GPConfigurable):
         """Return currently-registered APScheduler jobs."""
         return list(self._scheduler.get_jobs())
 
+    def get_job_max_runs(self, job_id: str) -> int | None:
+        """Return the configured ``max_runs`` cap for ``job_id``, or ``None`` (unlimited).
+
+        Returns ``None`` both for jobs with no cap and for unknown job ids — callers
+        that need to distinguish should check :meth:`get_jobs` first.
+        """
+        return self._job_max_runs.get(job_id)
+
     def start(self) -> None:
         """Start the BackgroundScheduler (returns immediately; background thread)."""
         if self._started:

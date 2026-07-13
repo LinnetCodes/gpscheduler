@@ -77,12 +77,8 @@ def list_jobs_cmd(config: str | None, project: str) -> None:
         click.echo("No enabled jobs.")
         return
     click.echo(f"{len(jobs)} enabled job(s):")
-    # _job_max_runs maps job_id -> max_runs (None = unlimited). Populated by
-    # register_jobs (ADR-0016). Access the internal dict directly; cli.py is
-    # part of gpscheduler.
-    max_runs_map = getattr(scheduler, "_job_max_runs", {})
     for j in jobs:
-        mr = max_runs_map.get(j.id)
+        mr = scheduler.get_job_max_runs(j.id)
         mr_str = str(mr) if mr is not None else "unlimited"
         click.echo(f"  - {j.id}: next run {_next_run_time(j)} (max_runs: {mr_str})")
 
