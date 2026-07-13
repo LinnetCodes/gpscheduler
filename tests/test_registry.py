@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from gpscheduler.registry import Registry
+from gpscheduler.registry import Registry, registry
 
 
 def _sample() -> None:
@@ -91,3 +91,37 @@ def test_clear_init_empties_init_map_only() -> None:
     assert not reg.contains_init(init_key)
     # clear_init must NOT touch the scheduled map
     assert reg.contains(sched_key)
+
+
+# --- autouse conftest fixture isolation -------------------------------------
+#
+# tests/conftest.py installs an autouse fixture that snapshots the process-global
+# ``registry`` around every test and restores it in teardown. The two tests
+# below, run in file order, prove that a registration made in the first test
+# does NOT leak into the second.
+
+
+def test_registry_isolation_autouse_fixture_restores_state() -> None:
+    """The autouse conftest fixture should restore registry state after each test.
+
+    Register a sentinel function, then verify it's gone after the test (the
+    fixture's teardown should have restored the pre-test snapshot).
+    """
+    # Register a sentinel inline.
+    def _sentinel_fn() -> None:
+        pass
+
+    _sentinel_fn.__qualname__ = "_sentinel_fn_isolation_test"  # avoid collisions
+    registry.register(_sentinel_fn)
+    key = f"{_sentinel_fn.__module__}.{_sentinel_fn.__qualname__}"
+    assert registry.contains(key), "sentinel should be registered during the test"
+    # After this test, the fixture's teardown should remove the sentinel.
+    # We verify this in a SEPARATE follow-up test that runs after.
+
+
+def test_registry_isolation_previous_test_sentinel_is_gone() -> None:
+    """The previous test's sentinel registration must NOT leak into this test."""
+    # The sentinel key from test_registry_isolation_autouse_fixture_restores_state
+    # used the qualname "_sentinel_fn_isolation_test" in this module.
+    key = f"{__name__}._sentinel_fn_isolation_test"
+    assert not registry.contains(key), "previous test's sentinel leaked!"

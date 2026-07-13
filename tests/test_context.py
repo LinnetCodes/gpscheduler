@@ -198,15 +198,10 @@ def test_dispatch_per_job_isolation() -> None:
     from gpscheduler.registry import registry as _reg
 
     _reg.register(_other_job)
-    try:
-        other_dot = f"{_other_job.__module__}.{_other_job.__qualname__}"
-        ra = _dispatch_contextual_job("test-token", _JOB_DOT, _INIT_DOT, "iso_a", None, 1)
-        rb = _dispatch_contextual_job("test-token", other_dot, _INIT_DOT, "iso_b", None)
-        assert ra is not rb
-    finally:
-        _reg._functions.pop(  # type: ignore[attr-defined]
-            f"{_other_job.__module__}.{_other_job.__qualname__}", None
-        )
+    other_dot = f"{_other_job.__module__}.{_other_job.__qualname__}"
+    ra = _dispatch_contextual_job("test-token", _JOB_DOT, _INIT_DOT, "iso_a", None, 1)
+    rb = _dispatch_contextual_job("test-token", other_dot, _INIT_DOT, "iso_b", None)
+    assert ra is not rb
 
 
 def test_dispatch_injects_gp_globals_into_init() -> None:
@@ -220,22 +215,17 @@ def test_dispatch_injects_gp_globals_into_init() -> None:
     from gpscheduler.registry import registry as _reg
 
     _reg.register(_job_needing_ctx)
-    try:
-        job_dot = f"{_job_needing_ctx.__module__}.{_job_needing_ctx.__qualname__}"
-        init_dot = f"{_capturing_init.__module__}.{_capturing_init.__qualname__}"
-        result = _dispatch_contextual_job(
-            "test-token",
-            job_dot,
-            init_dot,
-            "gp_globals_test",
-            {"db_url": "sqlite:///x", "limit": 100},
-        )
-        assert _gp_globals_received == {"db_url": "sqlite:///x", "limit": 100}
-        assert result == {"db_url": "sqlite:///x", "limit": 100}
-    finally:
-        _reg._functions.pop(  # type: ignore[attr-defined]
-            f"{_job_needing_ctx.__module__}.{_job_needing_ctx.__qualname__}", None
-        )
+    job_dot = f"{_job_needing_ctx.__module__}.{_job_needing_ctx.__qualname__}"
+    init_dot = f"{_capturing_init.__module__}.{_capturing_init.__qualname__}"
+    result = _dispatch_contextual_job(
+        "test-token",
+        job_dot,
+        init_dot,
+        "gp_globals_test",
+        {"db_url": "sqlite:///x", "limit": 100},
+    )
+    assert _gp_globals_received == {"db_url": "sqlite:///x", "limit": 100}
+    assert result == {"db_url": "sqlite:///x", "limit": 100}
 
 
 def test_dispatch_none_returning_init_runs_once() -> None:
@@ -249,17 +239,12 @@ def test_dispatch_none_returning_init_runs_once() -> None:
     from gpscheduler.registry import registry as _reg
 
     _reg.register(_job_none_ctx)
-    try:
-        job_dot = f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}"
-        init_dot = f"{_none_init.__module__}.{_none_init.__qualname__}"
-        _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
-        _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
-        _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
-        assert _none_init_call_count[0] == 1  # init ran exactly once despite returning None
-    finally:
-        _reg._functions.pop(  # type: ignore[attr-defined]
-            f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}", None
-        )
+    job_dot = f"{_job_none_ctx.__module__}.{_job_none_ctx.__qualname__}"
+    init_dot = f"{_none_init.__module__}.{_none_init.__qualname__}"
+    _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
+    _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
+    _dispatch_contextual_job("test-token", job_dot, init_dot, "none_init_test", None)
+    assert _none_init_call_count[0] == 1  # init ran exactly once despite returning None
 
 
 # --- per-scheduler cache isolation (token-keyed cache) ---------------------
