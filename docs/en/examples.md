@@ -263,8 +263,8 @@ anything runs):
 - **Switch the default executor** — set `scheduler.yaml`'s `executor: process` → every
   job without a per-job override moves to the process pool (note the higher startup cost
   on Windows as workers spawn).
-- **Faster smoke test** — temporarily lower `hello.yaml`'s cron to `* * * * *`
-  (every minute) to see frequent output.
+- **Faster smoke test** — temporarily change `hello.yaml`'s cron to `* * * * * *`
+  (every second) to see frequent output.
 
 ## How gpscheduler finds things
 

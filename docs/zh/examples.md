@@ -251,7 +251,7 @@ demo 是 gpscheduler Fail-Early 行为的好实验场。下面每一项都会破
   `list-jobs` 里。
 - **切换默认 executor** —— 把 `scheduler.yaml` 的 `executor` 设为 `process` → 每个没有 per-job
   覆盖的 job 都移到进程池（注意 Windows 下 worker 派生时更高的启动开销）。
-- **更快冒烟测试** —— 临时把 `hello.yaml` 的 cron 调到 `* * * * *`（每分钟）以看到频繁输出。
+- **更快冒烟测试** —— 临时把 `hello.yaml` 的 cron 改为 `* * * * * *`（每秒）以看到频繁输出。
 
 ## gpscheduler 如何找到东西
 
