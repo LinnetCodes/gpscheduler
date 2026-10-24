@@ -15,7 +15,7 @@ from gpscheduler import scheduled, worker_init, GPScheduler, GPSchedulerConfig, 
 | [`GPScheduler`](#gpscheduler) | The engine class |
 | [`GPSchedulerConfig`](#gpschedulerconfig) | Scheduler-level config data class |
 | [`GPJobConfig`](#gpjobconfig) | Per-job config data class |
-| [`create_scheduler`](#create_scheduler) / [`run_scheduler`](#run_scheduler) | Convenience functions |
+| [`create_scheduler`](#create_scheduler) / [`create_scheduler_from_cfg_mgr`](#create_scheduler_from_cfg_mgr) / [`run_scheduler`](#run_scheduler) | Convenience functions |
 | [Exception hierarchy](#exception-hierarchy) | All exceptions gpscheduler raises |
 | [Embedded usage](#embedded-usage) | How to embed gpscheduler in a host application |
 
@@ -333,7 +333,66 @@ It **does not start** the scheduler — call `.start()` (non-blocking) or
 | `cfg_folder` | `Path \| str \| None` | `None` | Path to the gpconfig config folder. `None` → gpconfig's search (env var `GPSCHEDULER_CFG_PATH`, then `~/.gpscheduler/`). |
 | `project_name` | `str` | `"gpscheduler"` | gpconfig project name. |
 
-Raises `ConfigError` (or a subclass) on any config failure.
+Raises `ConfigError` (or a subclass) on any config failure. It is a convenience
+wrapper: it creates its own GPConfigManager and calls
+[`create_scheduler_from_cfg_mgr`](#create_scheduler_from_cfg_mgr) with the
+standard-layout addresses.
+
+## `create_scheduler_from_cfg_mgr`
+
+```python
+from gpscheduler import create_scheduler_from_cfg_mgr
+from gpconfig import GPConfigManager
+
+def create_scheduler_from_cfg_mgr(
+    manager: GPConfigManager,
+    scheduler_path: str = "scheduler",
+    jobs_path: str = "jobs",
+) -> GPScheduler: ...
+```
+
+The general assembly entry point: builds a scheduler from a **caller-owned**
+[`GPConfigManager`](https://github.com/LinnetCodes/gpconfig) instead of creating
+one. `scheduler_path` and `jobs_path` are gpconfig **dot-notation addresses**:
+
+- `manager.get_config(scheduler_path)` must resolve to the
+  [`GPSchedulerConfig`](#gpschedulerconfig) file.
+- Each job config is read from `<jobs_path>.<name>`.
+
+The defaults (`"scheduler"` / `"jobs"`) reproduce the
+[standard layout](configuration.md#folder-layout) — this is exactly what
+[`create_scheduler`](#create_scheduler) delegates to.
+
+| Parameter | Type | Default | Meaning |
+|-----------|------|---------|---------|
+| `manager` | `GPConfigManager` | — | Your process's config manager. Reused as-is; gpscheduler never constructs a second one. |
+| `scheduler_path` | `str` | `"scheduler"` | Dot address of the scheduler config, e.g. `"scheduler.dataloader"` for `scheduler/dataloader.yaml`. |
+| `jobs_path` | `str` | `"jobs"` | Dot address of the jobs folder, e.g. `"scheduler.jobs"` for `scheduler/jobs/*.yaml`. |
+
+Use it when your project already holds a single `GPConfigManager` instance, or
+when your config tree nests the scheduler under a subfolder (e.g. one scheduler
+config per role, jobs shared under `scheduler/jobs/`):
+
+```python
+from gpconfig import GPConfigManager
+from gpscheduler import create_scheduler_from_cfg_mgr
+
+manager = GPConfigManager("myapp", "path/to/configs")   # your process's one manager
+scheduler = create_scheduler_from_cfg_mgr(
+    manager,
+    scheduler_path="scheduler.dataloader",   # scheduler/dataloader.yaml
+    jobs_path="scheduler.jobs",              # scheduler/jobs/*.yaml
+)
+scheduler.start()
+```
+
+Load-time behavior (Fail-Early validation, `worker_init` dispatch binding,
+disabled-job surfacing) is identical to [`create_scheduler`](#create_scheduler).
+Raises `ConfigError` if the scheduler address is missing or does not resolve to
+a `GPSchedulerConfig`. Like `create_scheduler`, assembly also binds `gpclog` to
+the given manager's config folder (best-effort and non-fatal); note this binding
+is process-global — if your application keeps several managers, the last
+assembly wins.
 
 ## `run_scheduler`
 

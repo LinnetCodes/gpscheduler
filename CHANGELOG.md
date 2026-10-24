@@ -13,6 +13,11 @@ API surface of gpscheduler:
 - **Config-driven scheduling** — declare jobs (cron, callable, args) in YAML via
   [gpconfig](https://github.com/LinnetCodes/gpconfig); nothing is hardcoded in
   application code.
+- **`create_scheduler_from_cfg_mgr`** — assemble a scheduler from a
+  caller-owned `GPConfigManager` at configurable gpconfig dot-addresses
+  (`scheduler_path`, `jobs_path`), enabling custom config layouts and manager
+  reuse; `create_scheduler` now delegates to it, and `load_jobs` accepts
+  `jobs_path`.
 - **`@scheduled` decorator** — marks a module-level function as schedulable;
   located by dotted path and validated against a strict process-local Registry.
 - **`@worker_init` decorator** — builds an expensive object once per execution

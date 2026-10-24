@@ -52,8 +52,9 @@ def _make_registry(*funcs: Any) -> Registry:
 class FakeManager:
     """Stand-in for GPConfigManager: serves job configs from a dict."""
 
-    def __init__(self, jobs: dict[str, GPJobConfig]) -> None:
+    def __init__(self, jobs: dict[str, GPJobConfig], jobs_path: str = "jobs") -> None:
         self._jobs = jobs
+        self._jobs_path = jobs_path
         self._cfg_folder = Path("/fake")
 
     @property
@@ -61,22 +62,78 @@ class FakeManager:
         return self._cfg_folder
 
     def list_configs(self, path: str = "") -> list[str]:
-        if path == "jobs":
+        if path == self._jobs_path:
             return list(self._jobs.keys())
         return []
 
     def get_config(self, path: str, config_cls: Any = None) -> Any:
-        # path like "jobs.cleanup"
-        parts = path.split(".")
-        if len(parts) == 2 and parts[0] == "jobs":
-            cfg = self._jobs[parts[1]]
-            # Mirror GPConfigManager, which stamps name (file stem) and
-            # cfg_file_path onto every loaded config. In-memory test configs
-            # keep the default cfg_file_path (Path() == "."), so loader._src
-            # treats it as absent and falls back to "job '<name>'".
-            cfg.name = parts[1]
-            return cfg
+        # path like "jobs.cleanup" or, with a custom jobs_path,
+        # "scheduler.jobs.cleanup" (jobs_path + "." + name).
+        prefix = f"{self._jobs_path}."
+        if path.startswith(prefix):
+            name = path[len(prefix) :]
+            if name in self._jobs:
+                cfg = self._jobs[name]
+                # Mirror GPConfigManager, which stamps name (file stem) and
+                # cfg_file_path onto every loaded config. In-memory test configs
+                # keep the default cfg_file_path (Path() == "."), so loader._src
+                # treats it as absent and falls back to "job '<name>'".
+                cfg.name = name
+                return cfg
         raise KeyError(path)
+
+
+class _RecordingManager(FakeManager):
+    """FakeManager that records every path handed to list_configs/get_config."""
+
+    def __init__(self, jobs: dict[str, GPJobConfig], jobs_path: str = "jobs") -> None:
+        super().__init__(jobs, jobs_path)
+        self.listed_paths: list[str] = []
+        self.requested_paths: list[str] = []
+
+    def list_configs(self, path: str = "") -> list[str]:
+        self.listed_paths.append(path)
+        return super().list_configs(path)
+
+    def get_config(self, path: str, config_cls: Any = None) -> Any:
+        self.requested_paths.append(path)
+        return super().get_config(path, config_cls)
+
+
+def test_load_jobs_default_jobs_path_is_root_jobs() -> None:
+    """Regression: without jobs_path the loader addresses the root 'jobs' folder."""
+    reg = _make_registry(_func_no_globals)
+    mgr = _RecordingManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])}
+    )
+    result = load_jobs(
+        manager=mgr,
+        registry=reg,
+        sched_config=_sched_config(),
+        import_packages=lambda _pkgs: None,
+    )
+    assert [j.name for j in result.enabled] == ["x"]
+    assert mgr.listed_paths == ["jobs"]
+    assert mgr.requested_paths == ["jobs.x"]
+
+
+def test_load_jobs_uses_custom_jobs_path_prefix() -> None:
+    """jobs_path drives both list_configs and per-job get_config addressing."""
+    reg = _make_registry(_func_no_globals)
+    mgr = _RecordingManager(
+        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])},
+        jobs_path="scheduler.jobs",
+    )
+    result = load_jobs(
+        manager=mgr,
+        registry=reg,
+        sched_config=_sched_config(),
+        import_packages=lambda _pkgs: None,
+        jobs_path="scheduler.jobs",
+    )
+    assert [j.name for j in result.enabled] == ["x"]
+    assert mgr.listed_paths == ["scheduler.jobs"]
+    assert mgr.requested_paths == ["scheduler.jobs.x"]
 
 
 def _load(

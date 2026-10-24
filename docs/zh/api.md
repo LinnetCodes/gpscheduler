@@ -14,7 +14,7 @@ from gpscheduler import scheduled, worker_init, GPScheduler, GPSchedulerConfig, 
 | [`GPScheduler`](#gpscheduler) | 引擎类 |
 | [`GPSchedulerConfig`](#gpschedulerconfig) | 调度器级配置数据类 |
 | [`GPJobConfig`](#gpjobconfig) | 单个 job 配置数据类 |
-| [`create_scheduler`](#create_scheduler) / [`run_scheduler`](#run_scheduler) | 便捷函数 |
+| [`create_scheduler`](#create_scheduler) / [`create_scheduler_from_cfg_mgr`](#create_scheduler_from_cfg_mgr) / [`run_scheduler`](#run_scheduler) | 便捷函数 |
 | [异常层级](#异常层级) | gpscheduler 抛出的所有异常 |
 | [嵌入式用法](#嵌入式用法) | 如何把 gpscheduler 嵌入宿主应用 |
 
@@ -304,6 +304,59 @@ def create_scheduler(
 | `project_name` | `str` | `"gpscheduler"` | gpconfig 项目名。 |
 
 任何配置失败都抛 `ConfigError`（或其子类）。
+它是一个便利封装：自建 GPConfigManager 后以标准布局地址调用 [`create_scheduler_from_cfg_mgr`](#create_scheduler_from_cfg_mgr)。
+
+## `create_scheduler_from_cfg_mgr`
+
+```python
+from gpscheduler import create_scheduler_from_cfg_mgr
+from gpconfig import GPConfigManager
+
+def create_scheduler_from_cfg_mgr(
+    manager: GPConfigManager,
+    scheduler_path: str = "scheduler",
+    jobs_path: str = "jobs",
+) -> GPScheduler: ...
+```
+
+通用装配入口：从**调用方自有的**
+[`GPConfigManager`](https://github.com/LinnetCodes/gpconfig) 组装调度器，而不是
+内部新建一个。`scheduler_path` / `jobs_path` 为 gpconfig **点号寻址**：
+
+- `manager.get_config(scheduler_path)` 必须解析到
+  [`GPSchedulerConfig`](#gpschedulerconfig) 配置文件。
+- 每个任务配置读取自 `<jobs_path>.<name>`。
+
+默认值（`"scheduler"` / `"jobs"`）即[标准布局](configuration.md#文件夹布局)
+——[`create_scheduler`](#create_scheduler) 内部正是以默认参数委托本函数。
+
+| 参数 | 类型 | 默认值 | 含义 |
+|------|------|--------|------|
+| `manager` | `GPConfigManager` | — | 你进程里的配置管理器，原样复用，gpscheduler 绝不会另建实例。 |
+| `scheduler_path` | `str` | `"scheduler"` | 调度器配置的点号地址，如 `"scheduler.dataloader"` 对应 `scheduler/dataloader.yaml`。 |
+| `jobs_path` | `str` | `"jobs"` | 任务目录的点号地址，如 `"scheduler.jobs"` 对应 `scheduler/jobs/*.yaml`。 |
+
+适用于：项目进程内已持有唯一 `GPConfigManager` 实例，或配置树把调度器配置放在
+子目录下（如按角色一文件、任务共享 `scheduler/jobs/`）：
+
+```python
+from gpconfig import GPConfigManager
+from gpscheduler import create_scheduler_from_cfg_mgr
+
+manager = GPConfigManager("myapp", "path/to/configs")   # 进程唯一 manager
+scheduler = create_scheduler_from_cfg_mgr(
+    manager,
+    scheduler_path="scheduler.dataloader",   # scheduler/dataloader.yaml
+    jobs_path="scheduler.jobs",              # scheduler/jobs/*.yaml
+)
+scheduler.start()
+```
+
+装载期行为（Fail-Early 校验、`worker_init` 分发绑定、禁用任务上报）与
+[`create_scheduler`](#create_scheduler) 完全一致。若调度器地址缺失或解析结果不是
+`GPSchedulerConfig`，抛出 `ConfigError`。与 `create_scheduler` 一样，装配时也会把
+`gpclog` 指向所给 manager 的配置目录（尽力而为、失败不致命）；注意该绑定是进程级
+的——若进程中持有多个 manager，以最后一次装配为准。
 
 ## `run_scheduler`
 

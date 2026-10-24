@@ -40,6 +40,14 @@ different cron/args. Adding or removing a job is just adding or removing a file.
 Both config classes forbid unknown keys (`extra="forbid"`): a typo in a field name is
 rejected at load time, not silently ignored.
 
+The standard layout above is what [`create_scheduler`](api.md#create_scheduler)
+and the CLI assume. If your config tree nests the scheduler elsewhere (for
+example one scheduler config per role under `scheduler/`, jobs shared under
+`scheduler/jobs/`), assemble it with
+[`create_scheduler_from_cfg_mgr`](api.md#create_scheduler_from_cfg_mgr), which
+takes gpconfig dot-notation addresses for both the scheduler config and the
+jobs folder.
+
 ## Scheduler configuration
 
 `scheduler.yaml` — a [`GPSchedulerConfig`](api.md#gpschedulerconfig):

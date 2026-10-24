@@ -10,9 +10,16 @@ from pathlib import Path
 
 import pytest
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED  # noqa: F401
+from gpconfig import GPConfigManager
 
 import gpscheduler  # noqa: F401  (registers config classes)
-from gpscheduler import GPScheduler, GPSchedulerConfig, create_scheduler, run_scheduler
+from gpscheduler import (
+    GPScheduler,
+    GPSchedulerConfig,
+    create_scheduler,
+    create_scheduler_from_cfg_mgr,
+    run_scheduler,
+)
 from gpscheduler.decorator import scheduled
 from gpscheduler.exceptions import ConfigError, InvalidTimezoneError
 from gpscheduler.scheduler import _process_init, bridge_apscheduler_logging
@@ -36,7 +43,13 @@ def _failing_task() -> None:
 
 
 def test_exported_from_package() -> None:
-    for name in ("GPScheduler", "GPSchedulerConfig", "create_scheduler", "run_scheduler"):
+    for name in (
+        "GPScheduler",
+        "GPSchedulerConfig",
+        "create_scheduler",
+        "create_scheduler_from_cfg_mgr",
+        "run_scheduler",
+    ):
         assert hasattr(gpscheduler, name)
 
 
@@ -186,9 +199,39 @@ def test_bridge_logging_is_idempotent() -> None:
     bridge_apscheduler_logging()
 
 
-def test_create_scheduler_builds_instance(tmp_path: Path) -> None:
-    # Build a minimal cfg_folder.
-    cfg_folder = tmp_path / "cfg"
+def _write_nested_skeleton(cfg_folder: Path) -> None:
+    """Write the nested tree's directories + global_env.yaml, no configs yet."""
+    (cfg_folder / "scheduler" / "jobs").mkdir(parents=True)
+    (cfg_folder / "global_env.yaml").write_text("project: test\n", encoding="utf-8")
+
+
+def _write_nested_layout(cfg_folder: Path) -> None:
+    """Write a nested scheduler/<role>.yaml + scheduler/jobs/<name>.yaml layout.
+
+    This is the downstream "quantas" shape from the issue spec: one scheduler
+    config per role under scheduler/, jobs shared under scheduler/jobs/.
+    """
+    _write_nested_skeleton(cfg_folder)
+    (cfg_folder / "scheduler" / "dataloader.yaml").write_text(
+        "cfg_class_name: GPSchedulerConfig\n"
+        "configured_class_name: GPScheduler\n"
+        "timezone: UTC\n"
+        "max_workers: 1\n",
+        encoding="utf-8",
+    )
+    quick_dotted = f"{_quick_task.__module__}.{_quick_task.__qualname__}"
+    (cfg_folder / "scheduler" / "jobs" / "quick.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {quick_dotted}\ncron: '* * * * *'\n",
+        encoding="utf-8",
+    )
+    (cfg_folder / "scheduler" / "jobs" / "dormant.yaml").write_text(
+        f"cfg_class_name: GPJobConfig\nfunc: {quick_dotted}\ncron: '* * * * *'\nenable: false\n",
+        encoding="utf-8",
+    )
+
+
+def _write_standard_layout(cfg_folder: Path) -> None:
+    """Write the standard layout: root scheduler.yaml + one enabled jobs/quick.yaml."""
     (cfg_folder / "jobs").mkdir(parents=True)
     (cfg_folder / "global_env.yaml").write_text("project: test\n", encoding="utf-8")
     (cfg_folder / "scheduler.yaml").write_text(
@@ -204,6 +247,12 @@ def test_create_scheduler_builds_instance(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+
+def test_create_scheduler_builds_instance(tmp_path: Path) -> None:
+    # Build a minimal cfg_folder.
+    cfg_folder = tmp_path / "cfg"
+    _write_standard_layout(cfg_folder)
+
     # create_scheduler must import packages (none here) and load jobs.
     s = create_scheduler(cfg_folder=cfg_folder, project_name="gpscheduler_test")
     assert isinstance(s, GPScheduler)
@@ -214,6 +263,79 @@ def test_create_scheduler_builds_instance(tmp_path: Path) -> None:
         assert len(jobs) == 1
     finally:
         s.shutdown(timeout=5)
+
+
+def test_create_scheduler_from_cfg_mgr_custom_layout(tmp_path: Path) -> None:
+    """Assemble from a nested scheduler/<role>.yaml + scheduler/jobs/ layout."""
+    cfg_folder = tmp_path / "cfg"
+    _write_nested_layout(cfg_folder)
+
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+    s = create_scheduler_from_cfg_mgr(
+        manager, scheduler_path="scheduler.dataloader", jobs_path="scheduler.jobs"
+    )
+    assert isinstance(s, GPScheduler)
+    assert [j.id for j in s.get_jobs()] == ["quick"]
+    assert s.get_disabled_job_names() == ["dormant"]
+
+
+def test_create_scheduler_from_cfg_mgr_defaults_match_standard_layout(
+    tmp_path: Path,
+) -> None:
+    """Defaults ('scheduler' / 'jobs') reproduce create_scheduler's standard layout."""
+    cfg_folder = tmp_path / "cfg"
+    _write_standard_layout(cfg_folder)
+
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+    s = create_scheduler_from_cfg_mgr(manager)
+    assert isinstance(s, GPScheduler)
+    assert [j.id for j in s.get_jobs()] == ["quick"]
+
+
+def test_create_scheduler_from_cfg_mgr_never_constructs_a_manager(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The caller's manager is reused; no second GPConfigManager may be built."""
+    cfg_folder = tmp_path / "cfg"
+    _write_nested_layout(cfg_folder)
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+
+    def _fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("create_scheduler_from_cfg_mgr must not construct a GPConfigManager")
+
+    monkeypatch.setattr("gpscheduler.scheduler.GPConfigManager", _fail)
+    s = create_scheduler_from_cfg_mgr(
+        manager, scheduler_path="scheduler.dataloader", jobs_path="scheduler.jobs"
+    )
+    assert isinstance(s, GPScheduler)
+
+
+def test_create_scheduler_from_cfg_mgr_type_mismatch_fails_fast(tmp_path: Path) -> None:
+    """A non-GPSchedulerConfig at scheduler_path raises ConfigError at load time."""
+    cfg_folder = tmp_path / "cfg"
+    _write_nested_skeleton(cfg_folder)
+    # No cfg_class_name -> get_config returns a plain dict, not GPSchedulerConfig.
+    (cfg_folder / "scheduler" / "dataloader.yaml").write_text(
+        "executor: thread\n", encoding="utf-8"
+    )
+
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+    with pytest.raises(ConfigError, match="expected GPSchedulerConfig"):
+        create_scheduler_from_cfg_mgr(
+            manager, scheduler_path="scheduler.dataloader", jobs_path="scheduler.jobs"
+        )
+
+
+def test_create_scheduler_from_cfg_mgr_missing_scheduler_config(tmp_path: Path) -> None:
+    """A scheduler_path that resolves to nothing is translated to ConfigError."""
+    cfg_folder = tmp_path / "cfg"
+    _write_nested_skeleton(cfg_folder)
+
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+    with pytest.raises(ConfigError, match="failed to load scheduler config"):
+        create_scheduler_from_cfg_mgr(
+            manager, scheduler_path="scheduler.dataloader", jobs_path="scheduler.jobs"
+        )
 
 
 def test_create_scheduler_with_no_jobs_folder_is_empty_schedule(tmp_path: Path) -> None:

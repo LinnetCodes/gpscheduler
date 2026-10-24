@@ -5,9 +5,33 @@ This conftest applies to ALL tests in tests/ (pytest auto-discovers it).
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
+
 import pytest
 
 from gpscheduler.registry import registry
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _gpclog_to_tmp(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Point gpclog at a per-session temp dir via GPCLOG_PATH.
+
+    gpscheduler acquires its gpclog logger inside GPScheduler construction;
+    with gpclog's default log_dir mode "auto" and GPCLOG_PATH unset, that warns
+    ("gpclog: Using home directory for logs") on first use and writes logs under
+    the user's home. Setting GPCLOG_PATH for the whole session keeps test output
+    pristine and stops tests writing to ~/gpclog_output.
+    """
+    old = os.environ.get("GPCLOG_PATH")
+    os.environ["GPCLOG_PATH"] = str(tmp_path_factory.mktemp("gpclog"))
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("GPCLOG_PATH", None)
+        else:
+            os.environ["GPCLOG_PATH"] = old
 
 
 @pytest.fixture(autouse=True)

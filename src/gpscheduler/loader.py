@@ -1,6 +1,7 @@
 """Config loader / validator (ADR-0004/0005/0006/0013).
 
-Walks the ``jobs/`` config folder via a GPConfigManager, resolves each
+Walks the jobs config folder (address ``jobs_path``, default root ``jobs/``)
+via a GPConfigManager, resolves each
 ``GPJobConfig`` against the Registry, validates cron + signature + reserved
 keys, and produces LoadedJob records the scheduler registers with APScheduler.
 Designed for dependency injection: callers pass the manager, registry, an
@@ -151,6 +152,7 @@ def load_jobs(
     import_packages: ImportPackagesFn = _default_import_packages,
     cron_parser: CronParserFn = parse_cron,
     context_cache_token: str | None = None,
+    jobs_path: str = "jobs",
 ) -> LoadedJobs:
     """Import packages, then load + validate every job under ``jobs/``.
 
@@ -165,6 +167,11 @@ def load_jobs(
     co-resident schedulers (logic.03, Option A). ``None`` is the legacy/no-
     scheduler-context default (cache key ``(None, job_name)``).
 
+    ``jobs_path`` is the gpconfig dot-notation address of the jobs folder
+    (default ``"jobs"`` = root ``jobs/``). Each job config is read from
+    ``<jobs_path>.<name>``, so nested layouts (e.g. ``scheduler.jobs``) work
+    without moving files.
+
     Raises:
         NotScheduledError, CronExpressionError, JobSignatureError,
         ReservedKeyError: on the first failing job (Fail-Early).
@@ -176,7 +183,7 @@ def load_jobs(
     # No jobs/ folder is legal -> empty schedule (ADR-0005); ConfigNotFoundError
     # means the folder simply isn't there. Any other gpconfig error propagates.
     try:
-        job_names = manager.list_configs("jobs")
+        job_names = manager.list_configs(jobs_path)
     except ConfigNotFoundError:
         job_names = []
 
@@ -185,7 +192,7 @@ def load_jobs(
     # get_config auto-detects GPJobConfig via cfg_class_name (returns a
     # GPJobConfig instance for jobs/<name>.yaml).
     for name in job_names:
-        job_cfg = manager.get_config(f"jobs.{name}")
+        job_cfg = manager.get_config(f"{jobs_path}.{name}")
         loaded_job = _validate_one(
             name=name,
             job_cfg=job_cfg,

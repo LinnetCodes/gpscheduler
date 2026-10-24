@@ -24,7 +24,12 @@ from gpscheduler.exceptions import (
     SignatureContractError,
     WorkerInitError,
 )
-from gpscheduler.scheduler import GPScheduler, create_scheduler, run_scheduler
+from gpscheduler.scheduler import (
+    GPScheduler,
+    create_scheduler,
+    create_scheduler_from_cfg_mgr,
+    run_scheduler,
+)
 
 __all__ = [
     "__version__",
@@ -36,6 +41,7 @@ __all__ = [
     # Scheduler engine + convenience functions (ADR-0009/0012/0013)
     "GPScheduler",
     "create_scheduler",
+    "create_scheduler_from_cfg_mgr",
     "run_scheduler",
     # Exceptions (ADR-0011)
     "GPSchedulerError",

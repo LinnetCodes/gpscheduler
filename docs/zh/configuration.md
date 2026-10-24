@@ -34,6 +34,12 @@ GPScheduler 完全通过由 [gpconfig](https://github.com/LinnetCodes/gpconfig) 
 
 两个配置类都禁止未知字段（`extra="forbid"`）：字段名拼写错误会在加载时被拒绝，绝不静默忽略。
 
+上述标准布局是 [`create_scheduler`](api.md#create_scheduler) 与 CLI 所假定的。
+如果你的配置树把调度器配置放在别处（例如按角色放在 `scheduler/` 下、任务共享
+`scheduler/jobs/`），请用
+[`create_scheduler_from_cfg_mgr`](api.md#create_scheduler_from_cfg_mgr)
+组装调度器——它接受调度器配置与任务目录的 gpconfig 点号寻址。
+
 ## 调度器配置
 
 `scheduler.yaml` —— 一个 [`GPSchedulerConfig`](api.md#gpschedulerconfig)：

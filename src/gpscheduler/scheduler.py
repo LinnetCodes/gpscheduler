@@ -324,28 +324,29 @@ class GPScheduler(GPConfigurable):
         return _ProcessWorkerInitializer(self.config.packages)
 
 
-def create_scheduler(
-    cfg_folder: Path | str | None = None,
-    project_name: str = "gpscheduler",
+def create_scheduler_from_cfg_mgr(
+    manager: GPConfigManager,
+    scheduler_path: str = "scheduler",
+    jobs_path: str = "jobs",
 ) -> GPScheduler:
-    """Build a GPScheduler from a gpconfig folder.
+    """Assemble a GPScheduler from a caller-owned GPConfigManager.
 
-    Initializes GPConfigManager, loads ``scheduler.yaml`` (GPSchedulerConfig),
-    imports packages, loads + validates all jobs, and registers them.
+    ``scheduler_path`` / ``jobs_path`` are gpconfig dot-notation addresses:
+    ``manager.get_config(scheduler_path)`` must yield the GPSchedulerConfig and
+    job configs are read from ``<jobs_path>.<name>``. Defaults match the
+    standard layout (root ``scheduler.yaml`` + ``jobs/``) — the shape
+    :func:`create_scheduler` assumes — so custom nested layouts (e.g.
+    ``scheduler.dataloader`` + ``scheduler.jobs``) reuse the same load,
+    validation, and worker_init dispatch machinery without a second manager.
     """
     try:
-        manager = GPConfigManager(project_name, cfg_folder=cfg_folder)
-    except GPConfigError as e:
-        raise ConfigError(f"failed to initialize config manager: {e}") from e
-
-    try:
-        sched_config = manager.get_config("scheduler")
+        sched_config = manager.get_config(scheduler_path)
     except GPConfigError as e:
         raise ConfigError(f"failed to load scheduler config: {e}") from e
 
     if not isinstance(sched_config, GPSchedulerConfig):
         raise ConfigError(
-            f"expected GPSchedulerConfig at 'scheduler', got {type(sched_config).__name__}"
+            f"expected GPSchedulerConfig at {scheduler_path!r}, got {type(sched_config).__name__}"
         )
 
     scheduler = GPScheduler(sched_config)
@@ -361,6 +362,7 @@ def create_scheduler(
             registry=_get_registry(),
             sched_config=sched_config,
             context_cache_token=scheduler._context_cache_token,
+            jobs_path=jobs_path,
         )
     except GPConfigError as e:
         raise ConfigError(f"failed to load jobs: {e}") from e
@@ -371,6 +373,26 @@ def create_scheduler(
     # disabled ones so list-jobs can report they were validated.
     scheduler._disabled_job_names = list(loaded.disabled)
     return scheduler
+
+
+def create_scheduler(
+    cfg_folder: Path | str | None = None,
+    project_name: str = "gpscheduler",
+) -> GPScheduler:
+    """Build a GPScheduler from a gpconfig folder (standard layout).
+
+    Initializes a GPConfigManager, then delegates to
+    :func:`create_scheduler_from_cfg_mgr` with the standard-layout addresses
+    (root ``scheduler.yaml`` + ``jobs/``). Loads the scheduler config, imports
+    packages, loads + validates all jobs, and registers them. To reuse a
+    process-owned manager or a custom config layout, call
+    :func:`create_scheduler_from_cfg_mgr` directly.
+    """
+    try:
+        manager = GPConfigManager(project_name, cfg_folder=cfg_folder)
+    except GPConfigError as e:
+        raise ConfigError(f"failed to initialize config manager: {e}") from e
+    return create_scheduler_from_cfg_mgr(manager, "scheduler", "jobs")
 
 
 def run_scheduler(scheduler: GPScheduler) -> None:
