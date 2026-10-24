@@ -78,8 +78,7 @@ def _default_import_packages(packages: list[str]) -> None:
             importlib.import_module(pkg)
         except ModuleNotFoundError as e:
             raise PackageImportError(
-                f"failed to import configured package {pkg!r} "
-                f"(in scheduler.yaml:packages): {e}"
+                f"failed to import configured package {pkg!r} (in scheduler.yaml:packages): {e}"
             ) from e
 
 
@@ -134,17 +133,13 @@ def _validate_max_runs(value: Any, src: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise MaxRunsError(
-            f"{src}: max_runs must be a positive integer, got bool {value!r}"
-        )
+        raise MaxRunsError(f"{src}: max_runs must be a positive integer, got bool {value!r}")
     if not isinstance(value, int):
         raise MaxRunsError(
             f"{src}: max_runs must be a positive integer, got {type(value).__name__} {value!r}"
         )
     if value <= 0:
-        raise MaxRunsError(
-            f"{src}: max_runs must be a positive integer, got {value}"
-        )
+        raise MaxRunsError(f"{src}: max_runs must be a positive integer, got {value}")
     return value
 
 

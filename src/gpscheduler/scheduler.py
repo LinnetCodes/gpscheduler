@@ -133,9 +133,7 @@ class GPScheduler(GPConfigurable):
         # then. Surfaced via get_disabled_job_names() for the list-jobs dry run
         # so users know disabled jobs were checked (behavior.02).
         self._disabled_job_names: list[str] = []
-        self._scheduler.add_listener(
-            self._on_job_run, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR
-        )
+        self._scheduler.add_listener(self._on_job_run, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
     @property
     def config(self) -> GPSchedulerConfig:

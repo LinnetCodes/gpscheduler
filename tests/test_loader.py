@@ -443,9 +443,7 @@ def test_load_worker_init_bad_signature_raises_at_load() -> None:
 
 def test_loaded_job_carries_max_runs_none_by_default() -> None:
     reg = _make_registry(_func_no_globals)
-    mgr = FakeManager(
-        {"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])}
-    )
+    mgr = FakeManager({"x": GPJobConfig(func=dotted(_func_no_globals), cron="0 3 * * *", args=[1])})
     jobs = _load(mgr, reg, _sched_config())
     assert jobs[0].max_runs is None
 

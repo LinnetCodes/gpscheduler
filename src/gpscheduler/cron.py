@@ -20,13 +20,24 @@ from gpscheduler.exceptions import CronExpressionError
 
 # POSIX day-of-week names -> POSIX int (0=Sunday .. 6=Saturday).
 _POSIX_DOW_NAMES = {
-    "sun": 0, "sunday": 0,
-    "mon": 1, "monday": 1,
-    "tue": 2, "tues": 2, "tuesday": 2,
-    "wed": 3, "weds": 3, "wednesday": 3,
-    "thu": 4, "thur": 4, "thurs": 4, "thursday": 4,
-    "fri": 5, "friday": 5,
-    "sat": 6, "saturday": 6,
+    "sun": 0,
+    "sunday": 0,
+    "mon": 1,
+    "monday": 1,
+    "tue": 2,
+    "tues": 2,
+    "tuesday": 2,
+    "wed": 3,
+    "weds": 3,
+    "wednesday": 3,
+    "thu": 4,
+    "thur": 4,
+    "thurs": 4,
+    "thursday": 4,
+    "fri": 5,
+    "friday": 5,
+    "sat": 6,
+    "saturday": 6,
 }
 
 
@@ -105,11 +116,7 @@ def _expand_posix_range(start: int, end: int, step: int) -> set[int]:
     full week (inclusive Sunday endpoints), while ``7-7`` and ``0-0`` are
     Sunday only.
     """
-    raw = (
-        range(start, end + 1, step)
-        if start <= end
-        else range(start, end + 8, step)
-    )
+    raw = range(start, end + 1, step) if start <= end else range(start, end + 8, step)
     return {v % 7 for v in raw}
 
 

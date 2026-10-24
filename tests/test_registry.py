@@ -107,6 +107,7 @@ def test_registry_isolation_autouse_fixture_restores_state() -> None:
     Register a sentinel function, then verify it's gone after the test (the
     fixture's teardown should have restored the pre-test snapshot).
     """
+
     # Register a sentinel inline.
     def _sentinel_fn() -> None:
         pass

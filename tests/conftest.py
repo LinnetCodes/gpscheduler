@@ -2,6 +2,7 @@
 
 This conftest applies to ALL tests in tests/ (pytest auto-discovers it).
 """
+
 from __future__ import annotations
 
 import pytest

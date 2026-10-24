@@ -6,6 +6,7 @@ via qualname, and module-resolution). Their kind-specific tails
 (double-decoration ban; worker_init's no-gp_context rule) live in their
 own modules.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -38,8 +39,7 @@ def _validate_common_contract(func: Callable[..., Any], decorator: str) -> None:
 
     if not inspect.isfunction(func):
         raise SignatureContractError(
-            f"{func!r}: {decorator} requires a plain function, "
-            "not a method or callable instance."
+            f"{func!r}: {decorator} requires a plain function, not a method or callable instance."
         )
 
     qualname = getattr(func, "__qualname__", "")

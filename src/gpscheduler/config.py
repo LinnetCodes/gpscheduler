@@ -59,9 +59,7 @@ class GPJobConfig(GPConfig):
         # bool FIRST: isinstance(True, int) is True, so it would otherwise pass
         # through the int check below.
         if isinstance(value, bool):
-            raise MaxRunsError(
-                f"max_runs must be a positive integer, got bool {value!r}"
-            )
+            raise MaxRunsError(f"max_runs must be a positive integer, got bool {value!r}")
         if not isinstance(value, int):
             raise MaxRunsError(
                 f"max_runs must be a positive integer, got {type(value).__name__} {value!r}"
