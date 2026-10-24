@@ -96,7 +96,10 @@ process**, declaratively:
   isolation.
 - **Embedding in a host application** — a web app or service that needs a background
   scheduler alongside its own event loop. Use the [embedded API](api.md#embedded-usage)
-  (`create_scheduler(...)` then `start()`/`shutdown()`), not the CLI.
+  (`create_scheduler(...)` then `start()`/`shutdown()`), not the CLI. If the host already
+  owns a `GPConfigManager` or nests its config tree,
+  [`create_scheduler_from_cfg_mgr`](api.md#create_scheduler_from_cfg_mgr) assembles the
+  same scheduler from that manager.
 
 GPScheduler is **not** the right tool for: distributed scheduling across multiple
 machines, sub-second or event-driven workloads (it is cron-style, not a stream

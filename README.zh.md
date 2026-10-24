@@ -16,6 +16,9 @@
 
 - **配置驱动的 cron 任务** —— 在 YAML 配置文件中声明调度计划、可调用对象与调用参数，无需在
   应用代码里硬编码定时器。
+- **自定义配置布局** —— 默认使用 `scheduler.yaml` + `jobs/` 标准目录；也可通过
+  `create_scheduler_from_cfg_mgr` 从自有的 `GPConfigManager` 按任意 gpconfig 点号
+  寻址组装调度器。
 - **不绑定特定包** —— 任务可指向任意已安装包中可导入的函数，通过 dotted path 定位。
 - **两个装饰器** —— `@scheduled` 标记函数为可调度；`@worker_init` 构建一次成本很高的对象
   （数据库连接、网络客户端……）并在多次运行中复用。

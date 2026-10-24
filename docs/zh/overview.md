@@ -81,7 +81,9 @@ GPScheduler 的依赖是单向流动的。除了调度器模块本身，没有�
   真正的并行与进程级隔离。
 - **嵌入宿主应用** —— 需要 web 应用或服务自带一个后台调度器时，使用
   [嵌入式 API](api.md#嵌入式用法)（`create_scheduler(...)` 然后 `start()`/`shutdown()`），
-  而非 CLI。
+  而非 CLI。若宿主已持有 `GPConfigManager`，或配置树采用嵌套布局，可用
+  [`create_scheduler_from_cfg_mgr`](api.md#create_scheduler_from_cfg_mgr) 从该 manager
+  组装出同样的调度器。
 
 GPScheduler **不**适合：跨多机的分布式调度；亚秒级或事件驱动的工作负载（它是 cron 风格，
 不是流处理器）；必须是 `async` 的 job（executor 是同步的）。
