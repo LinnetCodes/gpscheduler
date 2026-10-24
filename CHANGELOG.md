@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No version has been released yet. The initial alpha implements the full public
+## [0.2.0] - 2026-10-24
+
+First published release. The initial alpha implements the full public
 API surface of gpscheduler:
 
 - **Config-driven scheduling** — declare jobs (cron, callable, args) in YAML via
@@ -37,4 +39,5 @@ API surface of gpscheduler:
   embedded use; `gpscheduler run` / `list-jobs` console commands.
 - **Bilingual docs** — English / 简体中文 MkDocs site.
 
-[Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/initial...HEAD
+[Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LinnetCodes/gpscheduler/releases/tag/v0.2.0
