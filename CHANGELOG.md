@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-27
+
+### Added
+
+- **`logs_path` parameter on `create_scheduler_from_cfg_mgr`** — gpconfig
+  dot-address of the gpclog config folder to bind at assembly (default `""`,
+  the config root, unchanged from previous behavior). Host applications whose
+  logger YAMLs live in a dedicated subfolder (e.g. `logs/`) can now keep the
+  process-global gpclog binding where the rest of their libraries expect it.
+
 ## [0.2.0] - 2026-10-24
 
 First published release. The initial alpha implements the full public
@@ -39,5 +49,6 @@ API surface of gpscheduler:
   embedded use; `gpscheduler run` / `list-jobs` console commands.
 - **Bilingual docs** — English / 简体中文 MkDocs site.
 
-[Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LinnetCodes/gpscheduler/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/LinnetCodes/gpscheduler/releases/tag/v0.2.1
 [0.2.0]: https://github.com/LinnetCodes/gpscheduler/releases/tag/v0.2.0
