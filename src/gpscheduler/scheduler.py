@@ -328,6 +328,7 @@ def create_scheduler_from_cfg_mgr(
     manager: GPConfigManager,
     scheduler_path: str = "scheduler",
     jobs_path: str = "jobs",
+    logs_path: str = "",
 ) -> GPScheduler:
     """Assemble a GPScheduler from a caller-owned GPConfigManager.
 
@@ -338,6 +339,10 @@ def create_scheduler_from_cfg_mgr(
     :func:`create_scheduler` assumes — so custom nested layouts (e.g.
     ``scheduler.dataloader`` + ``scheduler.jobs``) reuse the same load,
     validation, and worker_init dispatch machinery without a second manager.
+
+    ``logs_path`` is the gpconfig dot-notation address of the gpclog config
+    folder within this manager's tree; the default ``""`` (config root)
+    reproduces the historical binding exactly.
     """
     try:
         sched_config = manager.get_config(scheduler_path)
@@ -352,9 +357,12 @@ def create_scheduler_from_cfg_mgr(
     scheduler = GPScheduler(sched_config)
 
     # Point gpclog at this manager's folder so users can configure logger YAMLs.
+    # logs_path selects where in the tree that folder lives; the binding is
+    # process-global, so cohabiting libraries with their own binding pass the
+    # subfolder address they own (e.g. "logs").
     with contextlib.suppress(Exception):
         # Non-fatal: gpclog falls back to default config.
-        gpclog.set_config_folder(GPConfigFolder(manager, ""))
+        gpclog.set_config_folder(GPConfigFolder(manager, logs_path))
 
     try:
         loaded = load_jobs(

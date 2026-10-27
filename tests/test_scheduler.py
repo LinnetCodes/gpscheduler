@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+import gpclog
 import pytest
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED  # noqa: F401
 from gpconfig import GPConfigManager
@@ -336,6 +337,46 @@ def test_create_scheduler_from_cfg_mgr_missing_scheduler_config(tmp_path: Path) 
         create_scheduler_from_cfg_mgr(
             manager, scheduler_path="scheduler.dataloader", jobs_path="scheduler.jobs"
         )
+
+
+def test_create_scheduler_from_cfg_mgr_logs_path_binds_gpclog_subfolder(
+    tmp_path: Path,
+) -> None:
+    """logs_path points the process-global gpclog config folder at that subfolder."""
+    cfg_folder = tmp_path / "cfg"
+    _write_nested_layout(cfg_folder)
+    (cfg_folder / "logs").mkdir()
+
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+    try:
+        s = create_scheduler_from_cfg_mgr(
+            manager,
+            scheduler_path="scheduler.dataloader",
+            jobs_path="scheduler.jobs",
+            logs_path="logs",
+        )
+        assert isinstance(s, GPScheduler)
+        assert gpclog._manager.config_folder is not None
+        assert gpclog._manager.config_folder.path == "logs"
+    finally:
+        gpclog.reset()
+
+
+def test_create_scheduler_from_cfg_mgr_default_logs_path_binds_root(
+    tmp_path: Path,
+) -> None:
+    """Omitting logs_path keeps the historical binding: the config root."""
+    cfg_folder = tmp_path / "cfg"
+    _write_standard_layout(cfg_folder)
+
+    manager = GPConfigManager("gpscheduler_test", cfg_folder=cfg_folder)
+    try:
+        s = create_scheduler_from_cfg_mgr(manager)
+        assert isinstance(s, GPScheduler)
+        assert gpclog._manager.config_folder is not None
+        assert gpclog._manager.config_folder.path == ""
+    finally:
+        gpclog.reset()
 
 
 def test_create_scheduler_with_no_jobs_folder_is_empty_schedule(tmp_path: Path) -> None:
