@@ -38,7 +38,8 @@ GPScheduler 完全通过由 [gpconfig](https://github.com/LinnetCodes/gpconfig) 
 如果你的配置树把调度器配置放在别处（例如按角色放在 `scheduler/` 下、任务共享
 `scheduler/jobs/`），请用
 [`create_scheduler_from_cfg_mgr`](api.md#create_scheduler_from_cfg_mgr)
-组装调度器——它接受调度器配置与任务目录的 gpconfig 点号寻址。
+组装调度器——它接受调度器配置、任务目录与 gpclog 日志目录（`logs_path`，默认为
+配置根目录）的 gpconfig 点号寻址。
 
 ## 调度器配置
 

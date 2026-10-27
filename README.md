@@ -19,7 +19,8 @@ arguments, and exposes a decorator to mark schedulable functions.
   config files; no timers hardcoded in application code.
 - **Custom config layouts** — the standard `scheduler.yaml` + `jobs/` tree is the
   default; `create_scheduler_from_cfg_mgr` also assembles from a caller-owned
-  `GPConfigManager` at any gpconfig dot-notation addresses.
+  `GPConfigManager` at any gpconfig dot-notation addresses, including the gpclog
+  logs folder (`logs_path`).
 - **Package-agnostic** — point a job at any importable function in any installed package,
   located by dotted path.
 - **Two decorators** — `@scheduled` marks a function as schedulable; `@worker_init` builds

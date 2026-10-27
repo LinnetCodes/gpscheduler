@@ -18,7 +18,7 @@
   应用代码里硬编码定时器。
 - **自定义配置布局** —— 默认使用 `scheduler.yaml` + `jobs/` 标准目录；也可通过
   `create_scheduler_from_cfg_mgr` 从自有的 `GPConfigManager` 按任意 gpconfig 点号
-  寻址组装调度器。
+  寻址组装调度器，gpclog 日志目录（`logs_path`）亦在其中。
 - **不绑定特定包** —— 任务可指向任意已安装包中可导入的函数，通过 dotted path 定位。
 - **两个装饰器** —— `@scheduled` 标记函数为可调度；`@worker_init` 构建一次成本很高的对象
   （数据库连接、网络客户端……）并在多次运行中复用。

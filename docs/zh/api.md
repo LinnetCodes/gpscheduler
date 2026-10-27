@@ -316,6 +316,7 @@ def create_scheduler_from_cfg_mgr(
     manager: GPConfigManager,
     scheduler_path: str = "scheduler",
     jobs_path: str = "jobs",
+    logs_path: str = "",
 ) -> GPScheduler: ...
 ```
 
@@ -335,6 +336,7 @@ def create_scheduler_from_cfg_mgr(
 | `manager` | `GPConfigManager` | — | 你进程里的配置管理器，原样复用，gpscheduler 绝不会另建实例。 |
 | `scheduler_path` | `str` | `"scheduler"` | 调度器配置的点号地址，如 `"scheduler.dataloader"` 对应 `scheduler/dataloader.yaml`。 |
 | `jobs_path` | `str` | `"jobs"` | 任务目录的点号地址，如 `"scheduler.jobs"` 对应 `scheduler/jobs/*.yaml`。 |
+| `logs_path` | `str` | `""` | gpclog 日志配置的绑定地址（点号），如 `"logs"` 对应 `logs/*.yaml`。默认 `""` 绑定配置根目录（既有行为）。 |
 
 适用于：项目进程内已持有唯一 `GPConfigManager` 实例，或配置树把调度器配置放在
 子目录下（如按角色一文件、任务共享 `scheduler/jobs/`）：
@@ -348,6 +350,7 @@ scheduler = create_scheduler_from_cfg_mgr(
     manager,
     scheduler_path="scheduler.dataloader",   # scheduler/dataloader.yaml
     jobs_path="scheduler.jobs",              # scheduler/jobs/*.yaml
+    logs_path="logs",                        # logs/*.yaml 供 gpclog 使用
 )
 scheduler.start()
 ```
@@ -355,8 +358,10 @@ scheduler.start()
 装载期行为（Fail-Early 校验、`worker_init` 分发绑定、禁用任务上报）与
 [`create_scheduler`](#create_scheduler) 完全一致。若调度器地址缺失或解析结果不是
 `GPSchedulerConfig`，抛出 `ConfigError`。与 `create_scheduler` 一样，装配时也会把
-`gpclog` 指向所给 manager 的配置目录（尽力而为、失败不致命）；注意该绑定是进程级
-的——若进程中持有多个 manager，以最后一次装配为准。
+`gpclog` 绑定到 manager 配置树中的某个目录（尽力而为、失败不致命）：默认为配置根
+目录，传入 `logs_path` 则绑定其子目录。注意该绑定是进程级的——若进程中持有多个
+manager，以最后一次装配为准。若你的日志 YAML 放在专用子目录（如 `logs/`），请传
+入 `logs_path`，让绑定落在应用其余部分所期望的位置。
 
 ## `run_scheduler`
 

@@ -348,6 +348,7 @@ def create_scheduler_from_cfg_mgr(
     manager: GPConfigManager,
     scheduler_path: str = "scheduler",
     jobs_path: str = "jobs",
+    logs_path: str = "",
 ) -> GPScheduler: ...
 ```
 
@@ -368,6 +369,7 @@ The defaults (`"scheduler"` / `"jobs"`) reproduce the
 | `manager` | `GPConfigManager` | — | Your process's config manager. Reused as-is; gpscheduler never constructs a second one. |
 | `scheduler_path` | `str` | `"scheduler"` | Dot address of the scheduler config, e.g. `"scheduler.dataloader"` for `scheduler/dataloader.yaml`. |
 | `jobs_path` | `str` | `"jobs"` | Dot address of the jobs folder, e.g. `"scheduler.jobs"` for `scheduler/jobs/*.yaml`. |
+| `logs_path` | `str` | `""` | Dot address of the gpclog config folder to bind, e.g. `"logs"` for `logs/*.yaml`. Default `""` binds the config root (historical behavior). |
 
 Use it when your project already holds a single `GPConfigManager` instance, or
 when your config tree nests the scheduler under a subfolder (e.g. one scheduler
@@ -382,6 +384,7 @@ scheduler = create_scheduler_from_cfg_mgr(
     manager,
     scheduler_path="scheduler.dataloader",   # scheduler/dataloader.yaml
     jobs_path="scheduler.jobs",              # scheduler/jobs/*.yaml
+    logs_path="logs",                        # logs/*.yaml for gpclog
 )
 scheduler.start()
 ```
@@ -389,10 +392,12 @@ scheduler.start()
 Load-time behavior (Fail-Early validation, `worker_init` dispatch binding,
 disabled-job surfacing) is identical to [`create_scheduler`](#create_scheduler).
 Raises `ConfigError` if the scheduler address is missing or does not resolve to
-a `GPSchedulerConfig`. Like `create_scheduler`, assembly also binds `gpclog` to
-the given manager's config folder (best-effort and non-fatal); note this binding
-is process-global — if your application keeps several managers, the last
-assembly wins.
+a `GPSchedulerConfig`. Like `create_scheduler`, assembly also binds `gpclog`
+(best-effort and non-fatal) to a folder in the manager's tree: the config root
+by default, or the `logs_path` subfolder when given. Note this binding is
+process-global — if your application keeps several managers, the last assembly
+wins. If your logger YAMLs live in a dedicated subfolder (e.g. `logs/`), pass
+`logs_path` so the binding lands where the rest of your application expects it.
 
 ## `run_scheduler`
 

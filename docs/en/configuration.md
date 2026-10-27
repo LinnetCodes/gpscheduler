@@ -45,8 +45,8 @@ and the CLI assume. If your config tree nests the scheduler elsewhere (for
 example one scheduler config per role under `scheduler/`, jobs shared under
 `scheduler/jobs/`), assemble it with
 [`create_scheduler_from_cfg_mgr`](api.md#create_scheduler_from_cfg_mgr), which
-takes gpconfig dot-notation addresses for both the scheduler config and the
-jobs folder.
+takes gpconfig dot-notation addresses for the scheduler config, the jobs
+folder, and the gpclog logs folder (`logs_path`; default is the config root).
 
 ## Scheduler configuration
 
